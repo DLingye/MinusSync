@@ -42,8 +42,8 @@
 
 #include "sha256.h"
 
-#define MSYNC_VERSION       "0.0606-3"
-#define MSYNC_BUILD         0003
+#define MSYNC_VERSION       "0.0606-5"
+#define MSYNC_BUILD         "0005"
 #define MSYNC_DEFAULT_PORT  65530
 #define MSYNC_IGNORE_FILE   ".msyncign"
 

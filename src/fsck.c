@@ -9,9 +9,22 @@ static int checked  = 0;
 #define INFO(fmt, ...) do { if (verbose) printf("  " fmt "\n", ##__VA_ARGS__); } while(0)
 
 static int verbose = 0;
+static uint8_t *reachable = NULL;
+static int reachable_count = 0;
+
+/* Record an object as reachable */
+static void mark_reachable_fsck(const uint8_t *hash) {
+    for (int i = 0; i < reachable_count; i++) {
+        if (hash_cmp(reachable + i * HASH_RAW_SIZE, hash) == 0) return;
+    }
+    reachable_count++;
+    reachable = (uint8_t *)realloc(reachable, (size_t)reachable_count * HASH_RAW_SIZE);
+    memcpy(reachable + (reachable_count - 1) * HASH_RAW_SIZE, hash, HASH_RAW_SIZE);
+}
 
 /* Verify a single object's hash matches its content */
 static int verify_object_hash(const uint8_t *hash, const char *label) {
+    mark_reachable_fsck(hash);
     uint8_t *data;
     size_t len;
     if (object_read(hash, &data, &len) != 0) {
@@ -85,21 +98,22 @@ static int verify_tree(const uint8_t *hash, const char *path) {
     return 0;
 }
 
-/* Verify a commit chain */
-static int verify_commit_chain(const uint8_t *hash, int depth, uint8_t *seen, int *seen_count) {
+/* Verify a commit chain (relies on global reachable set for cycle detection) */
+static int verify_commit_chain(const uint8_t *hash, int depth) {
     if (depth > 10000) {
         WARN("commit chain too deep (>10000), stopping traversal");
         return 0;
     }
 
-    /* Check for cycles */
-    for (int i = 0; i < *seen_count; i++) {
-        if (hash_cmp(seen + i * HASH_RAW_SIZE, hash) == 0) return 0;
+    /* Check for cycles via the global reachable set */
+    int already_seen = 0;
+    for (int i = 0; i < reachable_count; i++) {
+        if (hash_cmp(reachable + i * HASH_RAW_SIZE, hash) == 0) {
+            already_seen = 1;
+            break;
+        }
     }
-    if (*seen_count < 100000) {
-        memcpy(seen + (*seen_count) * HASH_RAW_SIZE, hash, HASH_RAW_SIZE);
-        (*seen_count)++;
-    }
+    if (already_seen) return 0;
 
     if (verify_object_hash(hash, "commit") != 0) return -1;
 
@@ -126,9 +140,15 @@ static int verify_commit_chain(const uint8_t *hash, int depth, uint8_t *seen, in
     INFO("commit %s (%s)", hex, message);
     verify_tree(tree_hash, "");
 
-    /* Recurse to parent */
-    if (parent_hash[0] != 0 && parent_hash[1] != 0) {
-        verify_commit_chain(parent_hash, depth + 1, seen, seen_count);
+    /* Recurse to parent (check if parent hash is non-zero) */
+    {
+        int has_parent = 0;
+        for (int k = 0; k < HASH_RAW_SIZE; k++) {
+            if (parent_hash[k] != 0) { has_parent = 1; break; }
+        }
+        if (has_parent) {
+            verify_commit_chain(parent_hash, depth + 1);
+        }
     }
 
     return 0;
@@ -138,10 +158,6 @@ static int verify_commit_chain(const uint8_t *hash, int depth, uint8_t *seen, in
 static int scan_objects_store(void) {
     if (!dir_exists(MSYNC_OBJECTS_DIR)) return 0;
 
-    char **dirs;
-    int dircount = 0;
-
-    /* Read first-level dirs */
     DIR *d = opendir(MSYNC_OBJECTS_DIR);
     if (!d) return 0;
 
@@ -233,8 +249,10 @@ int repo_fsck(int verb) {
     int ref_count;
     ref_list(&ref_names, &ref_hashes, &ref_count);
 
-    uint8_t *all_seen = (uint8_t *)malloc(100000 * HASH_RAW_SIZE);
-    int seen_count = 0;
+    /* Reset global reachable set */
+    free(reachable);
+    reachable = NULL;
+    reachable_count = 0;
 
     for (int i = 0; i < ref_count; i++) {
         char hex[HASH_HEX_SIZE + 1];
@@ -250,7 +268,7 @@ int repo_fsck(int verb) {
                     ERR("ref %s points to non-commit object %s", ref_names[i], hex);
                 } else {
                     INFO("ref   %s -> %.8s", ref_names[i], hex);
-                    verify_commit_chain(ref_hashes + i * HASH_RAW_SIZE, 0, all_seen, &seen_count);
+                    verify_commit_chain(ref_hashes + i * HASH_RAW_SIZE, 0);
                 }
                 free(d);
             }
@@ -288,8 +306,8 @@ int repo_fsck(int verb) {
                     uint8_t h[HASH_RAW_SIZE];
                     if (hex_to_hash(hex_str, h) == 0) {
                         int found = 0;
-                        for (int s = 0; s < seen_count; s++) {
-                            if (hash_cmp(h, all_seen + s * HASH_RAW_SIZE) == 0) {
+                        for (int s = 0; s < reachable_count; s++) {
+                            if (hash_cmp(h, reachable + s * HASH_RAW_SIZE) == 0) {
                                 found = 1;
                                 break;
                             }
@@ -305,12 +323,14 @@ int repo_fsck(int verb) {
             closedir(d);
         }
     }
-    INFO("reachable: %d objects", seen_count);
+    INFO("reachable: %d objects", reachable_count);
     if (dangling > 0) {
         WARN("%d dangling (unreachable) objects (use 'msync gc' to clean)", dangling);
     }
 
-    free(all_seen);
+    free(reachable);
+    reachable = NULL;
+    reachable_count = 0;
 
     /* Summary */
     printf("\n--- Summary ---\n");

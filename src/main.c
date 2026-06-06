@@ -3,7 +3,7 @@
 #include "msync.h"
 
 static void print_usage(void) {
-    printf("Minus Sync (msync) v%s - A simplified version control system\n", MSYNC_VERSION);
+    printf("Minus Sync (msync) Version %s Build %s - A simplified version control system\n", MSYNC_VERSION, MSYNC_BUILD);
     printf("Usage: msync <command> [options]\n\n");
     printf("Commands:\n");
     printf("  init                      Initialize a new msync repository\n");
