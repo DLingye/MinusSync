@@ -14,23 +14,34 @@ int commit_create(const uint8_t *tree_hash, const uint8_t *parent_hash,
     char *content = (char *)malloc(MAX_COMMIT_SIZE);
     if (!content) return -1;
     int pos = 0;
+    int remain = MAX_COMMIT_SIZE;
 
     char tree_hex[HASH_HEX_SIZE + 1];
     hash_to_hex(tree_hash, tree_hex);
 
-    pos += snprintf(content + pos, MAX_COMMIT_SIZE - pos, "tree %s\n", tree_hex);
+    pos += snprintf(content + pos, (size_t)remain, "tree %s\n", tree_hex);
+    if (pos >= MAX_COMMIT_SIZE) pos = MAX_COMMIT_SIZE - 1;
+    remain = MAX_COMMIT_SIZE - pos;
 
     if (parent_hash) {
         char parent_hex[HASH_HEX_SIZE + 1];
         hash_to_hex(parent_hash, parent_hex);
-        pos += snprintf(content + pos, MAX_COMMIT_SIZE - pos, "parent %s\n", parent_hex);
+        pos += snprintf(content + pos, (size_t)remain, "parent %s\n", parent_hex);
+        if (pos >= MAX_COMMIT_SIZE) pos = MAX_COMMIT_SIZE - 1;
+        remain = MAX_COMMIT_SIZE - pos;
     }
 
-    pos += snprintf(content + pos, MAX_COMMIT_SIZE - pos,
+    pos += snprintf(content + pos, (size_t)remain,
                     "author %s <%s> %ld\n", author, email, (long)now);
-    pos += snprintf(content + pos, MAX_COMMIT_SIZE - pos,
-                    "hostname %s\n", hostname);
-    pos += snprintf(content + pos, MAX_COMMIT_SIZE - pos, "\n%s\n", message);
+    if (pos >= MAX_COMMIT_SIZE) pos = MAX_COMMIT_SIZE - 1;
+    remain = MAX_COMMIT_SIZE - pos;
+
+    pos += snprintf(content + pos, (size_t)remain, "hostname %s\n", hostname);
+    if (pos >= MAX_COMMIT_SIZE) pos = MAX_COMMIT_SIZE - 1;
+    remain = MAX_COMMIT_SIZE - pos;
+
+    pos += snprintf(content + pos, (size_t)remain, "\n%s\n", message);
+    if (pos >= MAX_COMMIT_SIZE) pos = MAX_COMMIT_SIZE - 1;
 
     /* Build object with header */
     size_t body_len = strlen(content);
@@ -89,12 +100,14 @@ int commit_parse(const uint8_t *data, size_t len,
             const char *a = s + 7;
             const char *lt = strchr(a, '<');
             const char *gt = strchr(a, '>');
-            if (lt && gt) {
-                size_t name_len = lt - a - 1;
+            if (lt && gt && lt > a) {
+                size_t name_len = (size_t)(lt - a - 1);
+                if (name_len > 254) name_len = 254;
                 memcpy(author, a, name_len);
                 author[name_len] = '\0';
 
-                size_t email_len = gt - lt - 1;
+                size_t email_len = (size_t)(gt - lt - 1);
+                if (email_len > 254) email_len = 254;
                 memcpy(email, lt + 1, email_len);
                 email[email_len] = '\0';
 

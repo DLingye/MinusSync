@@ -35,6 +35,11 @@ int index_load(void) {
     entry_count = ((uint32_t)data[8] << 24) | ((uint32_t)data[9] << 16) |
                   ((uint32_t)data[10] << 8) | (uint32_t)data[11];
 
+    if (entry_count > MAX_ENTRIES) {
+        fprintf(stderr, "index: too many entries (%d), max %d\n", entry_count, MAX_ENTRIES);
+        free(data); return -1;
+    }
+
     entries = (index_entry_t *)calloc(entry_count, sizeof(index_entry_t));
     if (!entries) { free(data); return -1; }
 

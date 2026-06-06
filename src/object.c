@@ -131,12 +131,10 @@ int tree_build(const char *dirpath, uint8_t *hash_out) {
 
         if (S_ISDIR(st.st_mode)) {
             if (tree_build(fullpath, entries[ecount].hash) != 0) {
-                free(files[i]);
-                continue;
+                continue; /* entries[ecount] is dead; file_list_free cleans up files[i] */
             }
         } else {
             if (blob_create(fullpath, entries[ecount].hash) != 0) {
-                free(files[i]);
                 continue;
             }
         }
@@ -245,8 +243,10 @@ int tree_checkout(const uint8_t *hash, const char *target_dir) {
         } else if (strncmp((char *)entry_data, "blob ", 5) == 0) {
             const uint8_t *p = entry_data;
             while (*p != '\0' && p < entry_data + entry_len) p++;
+            if (p >= entry_data + entry_len) { free(entry_data); continue; }
             p++;
-            file_write(path, p, entry_len - (p - entry_data));
+            if ((size_t)(p - entry_data) > entry_len) { free(entry_data); continue; }
+            file_write(path, p, entry_len - (size_t)(p - entry_data));
         }
         free(entry_data);
     }

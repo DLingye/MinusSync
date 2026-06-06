@@ -98,7 +98,7 @@ int repo_update(const char *remote_arg, const char *branch) {
         /* Check if local is ahead of remote (local has extra commits) */
         if (!merge_is_fast_forward(remote_hash, local_hash)) {
             /* Divergent histories */
-            char lhex[9], rhex[9];
+            char lhex[HASH_HEX_SIZE + 1], rhex[HASH_HEX_SIZE + 1];
             hash_to_hex(local_hash, lhex); lhex[8] = '\0';
             hash_to_hex(remote_hash, rhex); rhex[8] = '\0';
             printf("Local and remote have diverged.\n");
@@ -162,6 +162,8 @@ int repo_update(const char *remote_arg, const char *branch) {
     size_t len;
     if (object_read(target_hash, &data, &len) != 0) {
         fprintf(stderr, "Failed to read target commit.\n");
+        for (int i = 0; i < count; i++) free(refs[i]);
+        free(refs); free(hashes);
         return -1;
     }
 

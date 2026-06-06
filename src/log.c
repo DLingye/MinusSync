@@ -58,22 +58,20 @@ static void collect_commits(const uint8_t *hash, int depth) {
     uint8_t tree[HASH_RAW_SIZE];
     commit_parse(data, len, tree, c->parent1,
                  c->author, c->email, c->hostname, c->message, &c->timestamp);
-    free(data);
 
-    /* Check if there's a second parent (merge commit) */
+    /* Check if there's a second parent (merge commit) — must do before free(data) */
     memset(c->parent2, 0, HASH_RAW_SIZE);
-    /* parent2 detection: scan raw commit data for second "parent " line */
     {
         const char *p = strstr((char *)data, "\nparent ");
         if (p) p = strstr(p + 1, "\nparent ");
         if (p) {
-            /* Found second parent line */
             char phex[HASH_HEX_SIZE + 1];
             memcpy(phex, p + 8, HASH_HEX_SIZE);
             phex[HASH_HEX_SIZE] = '\0';
             hex_to_hash(phex, c->parent2);
         }
     }
+    free(data);
 
     /* Recursively collect parents */
     if (c->parent1[0] != 0) collect_commits(c->parent1, depth + 1);

@@ -93,7 +93,9 @@ static int handle_fetch(int client_fd) {
 
             if (!client_has && !already_sending) {
                 send_count++;
-                send_hashes = (uint8_t *)realloc(send_hashes, send_count * HASH_RAW_SIZE);
+                uint8_t *tmp = (uint8_t *)realloc(send_hashes, send_count * HASH_RAW_SIZE);
+                if (!tmp) { free(send_hashes); return -1; }
+                send_hashes = tmp;
                 memcpy(send_hashes + (send_count - 1) * HASH_RAW_SIZE, cur, HASH_RAW_SIZE);
 
                 /* Also send the tree */
@@ -221,7 +223,7 @@ static int handle_push(int client_fd) {
     char old_hex[HASH_HEX_SIZE + 1];
     char new_hex[HASH_HEX_SIZE + 1];
 
-    if (sscanf(buf, "UPDATE %s %s %s", refname, old_hex, new_hex) != 3) {
+    if (sscanf(buf, "UPDATE %4095s %64s %64s", refname, old_hex, new_hex) != 3) {
         net_sendline(client_fd, "ERR Invalid format");
         return -1;
     }
@@ -289,7 +291,11 @@ static int handle_push(int client_fd) {
             net_sendline(client_fd, "ERR Hash mismatch");
             return -1;
         }
-        object_write(objdata, osize, hash);
+        if (object_write(objdata, osize, hash) != 0) {
+            free(objdata);
+            net_sendline(client_fd, "ERR Write failed");
+            return -1;
+        }
         free(objdata);
     }
 
@@ -298,6 +304,7 @@ static int handle_push(int client_fd) {
 
     net_sendline(client_fd, "OK");
     printf("[push] Updated %s\n", refname);
+    fflush(stdout);
     return 0;
 }
 

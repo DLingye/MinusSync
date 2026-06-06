@@ -13,13 +13,15 @@ int repo_clone(const char *remote_url, const char *dir, const char *remote_name)
     const char *slash = strchr(url, '/');
 
     if (colon && (!slash || colon < slash)) {
-        size_t hlen = colon - url;
+        size_t hlen = (size_t)(colon - url);
+        if (hlen > 255) hlen = 255;
         memcpy(host, url, hlen);
         host[hlen] = '\0';
         port = atoi(colon + 1);
         if (slash) snprintf(path, sizeof(path), "%s", slash + 1);
     } else if (slash) {
-        size_t hlen = slash - url;
+        size_t hlen = (size_t)(slash - url);
+        if (hlen > 255) hlen = 255;
         memcpy(host, url, hlen);
         host[hlen] = '\0';
         if (!host[0]) snprintf(host, sizeof(host), "localhost");
@@ -130,6 +132,8 @@ int repo_clone(const char *remote_url, const char *dir, const char *remote_name)
     size_t len;
     if (object_read(master_hash, &data, &len) != 0) {
         fprintf(stderr, "Failed to read commit.\n");
+        for (int i = 0; i < count; i++) free(refs[i]);
+        free(refs); free(hashes);
         chdir(orig_dir);
         return -1;
     }

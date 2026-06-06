@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 
 #include "msync.h"
+#include "quotes.h"
 
 static void print_usage(void) {
     printf("Minus Sync (msync) Version %s Build %s - A simplified version control system\n", MSYNC_VERSION, MSYNC_BUILD);
@@ -40,6 +41,9 @@ static void print_usage(void) {
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         print_usage();
+        srand((unsigned int)time(NULL));
+        int idx = rand() % QUOTE_COUNT;
+        printf("\n  \033[36m%s\033[0m\n", quotes[idx]);
         return 0;
     }
 

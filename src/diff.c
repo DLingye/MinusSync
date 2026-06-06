@@ -74,6 +74,7 @@ int diff_file(const char *path, const uint8_t *old_hash, const uint8_t *new_hash
     /* Simple line-by-line comparison */
     char *old_copy = (char *)malloc(old_len + 1);
     char *new_copy = (char *)malloc(new_len + 1);
+    if (!old_copy || !new_copy) { free(old_copy); free(new_copy); free(old_data); free(new_data); return -1; }
     memcpy(old_copy, old_data, old_len); old_copy[old_len] = '\0';
     memcpy(new_copy, new_data, new_len); new_copy[new_len] = '\0';
 
@@ -123,10 +124,6 @@ int diff_file(const char *path, const uint8_t *old_hash, const uint8_t *new_hash
     free(new_data);
     return 1;
 }
-
-#define STATUS_NEW     0
-#define STATUS_MODIFIED 1
-#define STATUS_DELETED 2
 
 int status_check(int *new_count, int *mod_count, int *del_count,
                  char ***names, int **states) {
