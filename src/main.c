@@ -26,6 +26,11 @@ static void print_usage(void) {
     printf("  mirror start [url] [-i <s>] [--serve <p>]\n");
     printf("                           Start mirror daemon (pull + serve)\n");
     printf("  serve   [-p <port>]       Start server mode\n");
+    printf("  ignore  add <pattern>      Add an ignore pattern\n");
+    printf("  ignore  list               List ignore patterns\n");
+    printf("  ignore  remove <pattern>   Remove an ignore pattern\n");
+    printf("  fsck    [-v]               Verify repository integrity\n");
+    printf("  gc      [--prune]          Garbage collect unreachable objects\n");
     printf("  config  <key> [value]     Get or set configuration\n");
     printf("\nRemote URL format: host:port or msync://host:port\n");
     printf("Use 'msync remote add <name> <url>' to save a remote.\n");
@@ -216,6 +221,45 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "Usage: msync remote <add|list|remove>\n");
             return 1;
         }
+
+    } else if (strcmp(cmd, "ignore") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Usage: msync ignore <add|list|remove> [pattern]\n");
+            return 1;
+        }
+        if (strcmp(argv[2], "add") == 0) {
+            if (argc < 4) {
+                fprintf(stderr, "Usage: msync ignore add <pattern>\n");
+                return 1;
+            }
+            return ignore_add(argv[3]);
+        } else if (strcmp(argv[2], "list") == 0 || strcmp(argv[2], "ls") == 0) {
+            return ignore_list();
+        } else if (strcmp(argv[2], "remove") == 0 || strcmp(argv[2], "rm") == 0) {
+            if (argc < 4) {
+                fprintf(stderr, "Usage: msync ignore remove <pattern>\n");
+                return 1;
+            }
+            return ignore_remove(argv[3]);
+        } else {
+            fprintf(stderr, "Unknown ignore command: %s\n", argv[2]);
+            return 1;
+        }
+
+    } else if (strcmp(cmd, "fsck") == 0) {
+        int verbose = 0;
+        for (int i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0)
+                verbose = 1;
+        }
+        return repo_fsck(verbose);
+
+    } else if (strcmp(cmd, "gc") == 0) {
+        int prune = 0;
+        for (int i = 2; i < argc; i++) {
+            if (strcmp(argv[i], "--prune") == 0) prune = 1;
+        }
+        return repo_gc(prune);
 
     } else if (strcmp(cmd, "config") == 0) {
         if (argc < 3) {

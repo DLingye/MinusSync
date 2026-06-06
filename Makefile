@@ -9,7 +9,7 @@ SRCS = src/main.c src/sha256.c src/util.c src/object.c src/index.c \
        src/refs.c src/diff.c src/net.c src/config.c src/commit.c \
        src/init.c src/status.c src/repo.c src/log.c src/branch.c \
        src/checkout.c src/push.c src/update.c src/clone.c src/serve.c \
-       src/remote.c src/mirror.c
+       src/remote.c src/mirror.c src/fsck.c src/gc.c
 
 OBJS = $(SRCS:.c=.o)
 TARGET = msync

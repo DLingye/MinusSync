@@ -42,8 +42,10 @@
 
 #include "sha256.h"
 
-#define MSYNC_VERSION       "0.0606"
+#define MSYNC_VERSION       "0.0606-3"
+#define MSYNC_BUILD         0003
 #define MSYNC_DEFAULT_PORT  65530
+#define MSYNC_IGNORE_FILE   ".msyncign"
 
 /* Status states */
 #define STATUS_NEW     0
@@ -57,7 +59,6 @@
 #define MSYNC_HEAD_FILE     ".msync/HEAD"
 #define MSYNC_INDEX_FILE    ".msync/index"
 #define MSYNC_CONFIG_FILE   ".msync/config"
-#define MSYNC_IGNORE_FILE   ".msyncignore"
 #define HASH_HEX_SIZE       64
 #define HASH_RAW_SIZE       32
 #define MAX_PATH_LEN        4096
@@ -171,6 +172,9 @@ int  file_write(const char *path, const uint8_t *data, size_t len);
 void file_list(const char *dir, char ***files, int *count);
 void file_list_free(char **files, int count);
 int  is_ignored(const char *path);
+int  ignore_add(const char *pattern);
+int  ignore_list(void);
+int  ignore_remove(const char *pattern);
 void strip_newline(char *s);
 char *msync_strdup(const char *s);
 void msync_free(void *p);
@@ -190,5 +194,7 @@ int  repo_clone(const char *remote_url, const char *dir, const char *remote_name
 int  repo_serve(int port);
 int  repo_mirror_once(const char *source_url);
 int  repo_mirror_daemon(const char *source_url, int interval_sec, int serve_port);
+int  repo_fsck(int verbose);
+int  repo_gc(int prune);
 
 #endif

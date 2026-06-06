@@ -94,7 +94,7 @@ void file_list_recursive(const char *dir, char ***files, int *count, const char 
         else snprintf(relpath, sizeof(relpath), "%s", fd.cFileName);
 
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-            if (strncmp(relpath, ".msync", 6) != 0) {
+            if (strncmp(relpath, ".msync", 6) != 0 && !is_ignored(relpath)) {
                 file_list_recursive(fullpath, files, count, relpath);
             }
         } else {
@@ -125,7 +125,7 @@ void file_list_recursive(const char *dir, char ***files, int *count, const char 
         if (stat(fullpath, &st) != 0) continue;
 
         if (S_ISDIR(st.st_mode)) {
-            if (strncmp(relpath, ".msync", 6) != 0) {
+            if (strncmp(relpath, ".msync", 6) != 0 && !is_ignored(relpath)) {
                 file_list_recursive(fullpath, files, count, relpath);
             }
         } else if (S_ISREG(st.st_mode)) {
@@ -150,6 +150,63 @@ void file_list_free(char **files, int count) {
     free(files);
 }
 
+/* Glob matching: supports *, ?, **, and directory prefix matching.
+ * p: pattern (never contains trailing / after parsing)
+ * s: string (file path, never starts with /)
+ * is_dir: 1 if s is a directory */
+static int glob_match(const char *p, const char *s, int is_dir) {
+    /* Handle **: match any number of path components */
+    if (p[0] == '*' && p[1] == '*') {
+        p += 2;
+        if (*p == '/') p++;       /* skip / after ** */
+        if (*p == '\0') return 1; /* ** matches everything */
+        /* Try matching at every position */
+        const char *sp = s;
+        while (*sp) {
+            if (glob_match(p, sp, is_dir)) return 1;
+            /* Move to next path component */
+            while (*sp && *sp != '/') sp++;
+            if (*sp == '/') sp++;
+        }
+        return glob_match(p, sp, is_dir);
+    }
+
+    while (*p && *s) {
+        if (*p == '*') {
+            p++;
+            if (*p == '\0') {
+                /* Trailing * matches everything except / in filename */
+                while (*s && *s != '/') s++;
+                return *s == '\0';
+            }
+            /* Try matching at every position within current component */
+            const char *sp = s;
+            while (*sp) {
+                if (glob_match(p, sp, is_dir)) return 1;
+                if (*sp == '/') break;
+                sp++;
+            }
+            return glob_match(p, sp, is_dir);
+        }
+        if (*p == '?') {
+            if (*s == '/') return 0;
+            p++; s++;
+            continue;
+        }
+        if (*p != *s) return 0;
+        p++; s++;
+    }
+
+    /* Pattern exhausted: string must be at end or at / */
+    if (*p == '\0') {
+        if (*s == '\0') return 1;
+        if (is_dir && *s != '\0') return 0;
+        return (*s == '\0');
+    }
+
+    return 0;
+}
+
 int is_ignored(const char *path) {
     if (!file_exists(MSYNC_IGNORE_FILE)) return 0;
 
@@ -157,20 +214,185 @@ int is_ignored(const char *path) {
     size_t len;
     if (file_read(MSYNC_IGNORE_FILE, &data, &len) != 0) return 0;
 
+    /* Determine if path is a directory */
+    struct stat st;
+    int is_dir = (stat(path, &st) == 0 && S_ISDIR(st.st_mode));
+
     char *content = (char *)data;
     char *line = strtok(content, "\n\r");
     int ignored = 0;
 
     while (line) {
+        /* Trim leading whitespace */
         while (*line == ' ' || *line == '\t') line++;
-        if (*line && *line != '#') {
-            if (strstr(path, line)) { ignored = 1; break; }
+
+        if (*line == '\0' || *line == '#') {
+            line = strtok(NULL, "\n\r");
+            continue;
         }
+
+        int negate = 0;
+        if (*line == '!') {
+            negate = 1;
+            line++;
+        }
+
+        /* Remove trailing whitespace */
+        size_t llen = strlen(line);
+        while (llen > 0 && (line[llen-1] == ' ' || line[llen-1] == '\t' || line[llen-1] == '\r')) {
+            line[--llen] = '\0';
+        }
+
+        int dir_only = 0;
+        if (llen > 0 && line[llen-1] == '/') {
+            dir_only = 1;
+            line[--llen] = '\0';
+        }
+
+        if (llen == 0) {
+            line = strtok(NULL, "\n\r");
+            continue;
+        }
+
+        /* Remove leading / for root-only match indicator */
+        int root_only = 0;
+        if (line[0] == '/') {
+            root_only = 1;
+            line++;
+            llen--;
+        }
+
+        /* Determine the string to match against */
+        const char *match_str = path;
+
+        if (root_only) {
+            /* Strip leading directory components for root match */
+            /* Match just the filename (no path separators) */
+            const char *last = strrchr(path, '/');
+            match_str = last ? last + 1 : path;
+        }
+
+        if (!strchr(line, '/') && !root_only) {
+            /* Pattern without /: match against filename only */
+            const char *last = strrchr(path, '/');
+            match_str = last ? last + 1 : path;
+        }
+
+        if (dir_only && !is_dir) {
+            line = strtok(NULL, "\n\r");
+            continue;
+        }
+
+        if (glob_match(line, match_str, is_dir)) {
+            ignored = negate ? 0 : 1;
+        }
+
         line = strtok(NULL, "\n\r");
     }
 
     free(data);
     return ignored;
+}
+
+/* Add a pattern to .msyncign */
+int ignore_add(const char *pattern) {
+    if (!pattern || !pattern[0]) return -1;
+
+    /* Read existing content */
+    uint8_t *data = NULL;
+    size_t len = 0;
+    char new_content[65536];
+    int pos = 0;
+
+    if (file_exists(MSYNC_IGNORE_FILE)) {
+        if (file_read(MSYNC_IGNORE_FILE, &data, &len) == 0) {
+            /* Check if pattern already exists */
+            char *content = (char *)data;
+            char *line = strtok(content, "\n\r");
+            while (line) {
+                while (*line == ' ' || *line == '\t') line++;
+                if (strcmp(line, pattern) == 0) {
+                    free(data);
+                    return 0; /* Already present */
+                }
+                pos += snprintf(new_content + pos, sizeof(new_content) - pos,
+                                "%s\n", line);
+                line = strtok(NULL, "\n\r");
+            }
+            free(data);
+        }
+    }
+
+    /* Append new pattern */
+    pos += snprintf(new_content + pos, sizeof(new_content) - pos,
+                    "%s\n", pattern);
+
+    return file_write(MSYNC_IGNORE_FILE, (uint8_t *)new_content, (size_t)pos);
+}
+
+/* List patterns in .msyncign */
+int ignore_list(void) {
+    if (!file_exists(MSYNC_IGNORE_FILE)) {
+        printf("No .msyncign file found. Add patterns with 'msync ignore add <pattern>'.\n");
+        return 0;
+    }
+
+    uint8_t *data;
+    size_t len;
+    if (file_read(MSYNC_IGNORE_FILE, &data, &len) != 0) return -1;
+
+    printf("Ignore patterns (%s):\n", MSYNC_IGNORE_FILE);
+    char *content = (char *)data;
+    char *line = strtok(content, "\n\r");
+    while (line) {
+        while (*line == ' ' || *line == '\t') line++;
+        if (*line && *line != '#') {
+            printf("  %s\n", line);
+        }
+        line = strtok(NULL, "\n\r");
+    }
+    free(data);
+    return 0;
+}
+
+/* Remove a pattern from .msyncign */
+int ignore_remove(const char *pattern) {
+    if (!file_exists(MSYNC_IGNORE_FILE)) return -1;
+
+    uint8_t *data;
+    size_t len;
+    if (file_read(MSYNC_IGNORE_FILE, &data, &len) != 0) return -1;
+
+    char new_content[65536];
+    int pos = 0;
+    int removed = 0;
+
+    char *content = (char *)data;
+    char *line = strtok(content, "\n\r");
+    while (line) {
+        char trimmed[4096];
+        char *s = line;
+        while (*s == ' ' || *s == '\t') s++;
+        snprintf(trimmed, sizeof(trimmed), "%s", s);
+        /* Also trim trailing whitespace */
+        size_t tl = strlen(trimmed);
+        while (tl > 0 && (trimmed[tl-1] == ' ' || trimmed[tl-1] == '\t' || trimmed[tl-1] == '\r'))
+            trimmed[--tl] = '\0';
+
+        if (strcmp(trimmed, pattern) != 0) {
+            pos += snprintf(new_content + pos, sizeof(new_content) - pos,
+                            "%s\n", line);
+        } else {
+            removed = 1;
+        }
+        line = strtok(NULL, "\n\r");
+    }
+
+    free(data);
+    if (removed) {
+        file_write(MSYNC_IGNORE_FILE, (uint8_t *)new_content, (size_t)pos);
+    }
+    return removed ? 0 : -1;
 }
 
 void strip_newline(char *s) {

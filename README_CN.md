@@ -1,4 +1,4 @@
-# Minus Sync (msync) v0.0606
+# Minus Sync (msync)  
 
 用 C 语言编写的轻量级版本控制系统，模仿 Git 但去除了臃肿功能。单个二进制文件（~70KB），支持 **Linux**、**Windows**（MinGW/MSVC）和 **Android Termux**，同时具备客户端和服务端能力。
 
@@ -17,6 +17,9 @@
 | 单仓库多远程 | 支持，可命名 | 支持，可命名 |
 | 镜像守护进程 | 内置（`msync mirror start`） | 需外部工具 |
 | 图形化日志 | 内置（`msync log --graphic`） | `git log --graph` |
+| 忽略文件 | `.msyncign`（glob 模式） | `.gitignore` |
+| 完整性检测 | 内置（`msync fsck`） | `git fsck` |
+| 垃圾回收 | 内置（`msync gc`） | `git gc` |
 
 ## 编译
 
@@ -111,6 +114,24 @@ msync update <远程|地址> [分支]          # 从远程拉取（自动合并�
 
 ```sh
 msync serve [-p <端口>]                 # 启动服务端（默认端口 65530）
+```
+
+### 忽略文件
+
+```sh
+msync ignore add <模式>                 # 添加忽略规则
+msync ignore list                       # 列出所有忽略规则
+msync ignore remove <模式>              # 移除忽略规则
+```
+
+规则存储在 `.msyncign` 文件中。语法见 [.msyncign](#msyncign) 章节。
+
+### 仓库维护
+
+```sh
+msync fsck [-v]                         # 验证仓库完整性
+msync gc                                # 显示不可达对象
+msync gc --prune                        # 删除不可达对象
 ```
 
 ### 仓库镜像
@@ -333,18 +354,95 @@ Run 'msync update origin' first to integrate remote changes.
 - **分叉历史**：本地和远程各自有独立提交 — msync 找到共同祖先，创建合并提交，保留双方历史。
 - **无法自动合并**：警告用户，使用远程版本作为基础，本地独有的提交保留在历史中可回溯。
 
-## .msyncignore
+## .msyncign
 
-创建 `.msyncignore` 文件来排除不需要追踪的文件：
+`.msyncign` 文件（兼容 `.gitignore` 语法）用于指定不需要追踪的文件。
+
+### 模式语法
+
+| 语法 | 说明 | 示例 |
+|------|------|------|
+| `*.ext` | 通配符匹配 | `*.o` 匹配 `main.o`、`src/util.o` |
+| `dir/` | 目录匹配 | `build/` 忽略整个 `build/` 目录 |
+| `path/*.ext` | 路径限定匹配 | `src/*.o` 匹配 `src/main.o` 但不匹配 `lib/src/a.o` |
+| `!pattern` | 取反（不忽略） | `!important.o` 从通配规则中排除 `important.o` |
+| `# comment` | 注释行 | `# 编译产物` |
+| `**` | 递归通配 | `**/temp` 匹配 `temp`、`a/temp`、`a/b/temp` |
+
+### 示例
 
 ```
+# 编译产物
 *.o
 *.exe
 build/
+
+# 依赖目录
+node_modules/
+
+# 环境配置
 .env
+*.log
+
+# 但保留这个文件
+!important.log
 ```
 
-模式与文件路径进行子串匹配。
+### 管理命令
+
+```sh
+msync ignore add "*.o"          # 添加规则
+msync ignore list               # 查看所有规则
+msync ignore remove "*.o"      # 移除规则
+```
+
+## 仓库维护
+
+### 完整性检测（`msync fsck`）
+
+验证仓库是否完整，逐级检查：
+
+1. HEAD 有效且指向存在的引用
+2. 所有分支引用指向有效的 commit 对象
+3. 每个 commit 的 tree 及其所有条目递归可达
+4. 所有对象哈希值与内容一致
+5. 检测悬空（不可达）对象
+
+```sh
+$ msync fsck
+--- HEAD ---
+--- Refs ---
+--- Object Store ---
+--- Reachability ---
+--- Summary ---
+Objects checked: 12
+Errors:          0
+Warnings:        0
+Repository is clean.
+
+$ msync fsck -v     # 详细模式：显示每个被检查的对象
+```
+
+### 垃圾回收（`msync gc`）
+
+随着提交积累和分支删除，不可达对象（孤立提交、blob、tree）会使仓库膨胀。`msync gc` 识别并可选择性地删除它们。
+
+```sh
+$ msync gc
+  Reachable objects: 12
+  Total objects:     15
+  Unreachable:       3
+  Recoverable space: 1024 bytes (1.0 KB)
+
+  3 unreachable objects found.
+  Run 'msync gc --prune' to remove them.
+
+$ msync gc --prune
+  Pruned 3 objects, freed 1.0 KB.
+
+$ msync gc
+  Repository is clean, no garbage found.
+```
 
 ## 许可证
 

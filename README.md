@@ -1,4 +1,4 @@
-# Minus Sync (msync) v0.0606
+# Minus Sync (msync)  
 
 A lightweight version control system written in C, inspired by Git but streamlined.
 
@@ -19,6 +19,9 @@ A lightweight version control system written in C, inspired by Git but streamlin
 | Remotes per repo | Multiple, named | Multiple, named |
 | Mirror daemon | Built-in (`msync mirror start`) | External tooling needed |
 | Graph log | Built-in (`msync log --graphic`) | `git log --graph` |
+| Ignore file | `.msyncign` (glob patterns) | `.gitignore` |
+| Integrity check | Built-in (`msync fsck`) | `git fsck` |
+| Garbage collection | Built-in (`msync gc`) | `git gc` |
 
 ## Building
 
@@ -113,6 +116,24 @@ msync update <remote|url> [branch]      # Pull from remote (auto-merge if possib
 
 ```sh
 msync serve [-p <port>]                 # Start server (default port 65530)
+```
+
+### Ignoring Files
+
+```sh
+msync ignore add <pattern>              # Add an ignore pattern
+msync ignore list                       # List all ignore patterns
+msync ignore remove <pattern>           # Remove an ignore pattern
+```
+
+Patterns stored in `.msyncign`. See [.msyncign](#msyncign) for syntax.
+
+### Repository Maintenance
+
+```sh
+msync fsck [-v]                         # Verify repository integrity
+msync gc                                # Show unreachable objects
+msync gc --prune                        # Remove unreachable objects
 ```
 
 ### Mirror (Repository Replication)
@@ -314,18 +335,95 @@ The server validates that your `old_hash` matches its current ref before accepti
 - **Fast-forward**: Remote is a direct descendant of local — automatic update.
 - **Divergent**: Local and remote have diverged — msync finds the common ancestor and creates a merge commit with both histories preserved.
 
-## .msyncignore
+## .msyncign
 
-Create a `.msyncignore` file to exclude files from tracking:
+The `.msyncign` file (compatible with `.gitignore` syntax) specifies intentionally untracked files.
+
+### Pattern Syntax
+
+| Syntax | Description | Example |
+|--------|-------------|---------|
+| `*.ext` | Wildcard matching | `*.o` matches `main.o`, `src/util.o` |
+| `dir/` | Directory match | `build/` ignores the entire `build/` directory |
+| `path/*.ext` | Path-scoped match | `src/*.o` matches `src/main.o` but not `lib/src/a.o` |
+| `!pattern` | Negation (un-ignore) | `!important.o` excludes `important.o` from a wildcard rule |
+| `# comment` | Comment line | `# build artifacts` |
+| `**` | Recursive wildcard | `**/temp` matches `temp`, `a/temp`, `a/b/temp` |
+
+### Example
 
 ```
+# Build artifacts
 *.o
 *.exe
 build/
+
+# Dependencies
+node_modules/
+
+# Environment
 .env
+*.log
+
+# But keep this one
+!important.log
 ```
 
-Patterns are substring-matched against file paths.
+### Management Commands
+
+```sh
+msync ignore add "*.o"          # Add a pattern
+msync ignore list               # Show all patterns
+msync ignore remove "*.o"      # Remove a pattern
+```
+
+## Repository Maintenance
+
+### Integrity Check (`msync fsck`)
+
+Verifies the repository is not corrupted by checking:
+
+1. HEAD is valid and points to an existing ref
+2. All branch refs point to valid commit objects
+3. Every commit's tree and all tree entries recursively exist
+4. All object hashes match their content
+5. Detects dangling (unreachable) objects
+
+```sh
+$ msync fsck
+--- HEAD ---
+--- Refs ---
+--- Object Store ---
+--- Reachability ---
+--- Summary ---
+Objects checked: 12
+Errors:          0
+Warnings:        0
+Repository is clean.
+
+$ msync fsck -v     # Verbose: show each object as it is checked
+```
+
+### Garbage Collection (`msync gc`)
+
+As commits accumulate and branches are deleted, unreferenced objects (orphaned commits, blobs, trees) can bloat the repository. `msync gc` identifies and optionally removes them.
+
+```sh
+$ msync gc
+  Reachable objects: 12
+  Total objects:     15
+  Unreachable:       3
+  Recoverable space: 1024 bytes (1.0 KB)
+
+  3 unreachable objects found.
+  Run 'msync gc --prune' to remove them.
+
+$ msync gc --prune
+  Pruned 3 objects, freed 1.0 KB.
+
+$ msync gc
+  Repository is clean, no garbage found.
+```
 
 ## License
 
