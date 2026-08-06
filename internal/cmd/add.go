@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/MinusSync/internal/index"
 	"github.com/MinusSync/internal/object"
@@ -69,6 +70,11 @@ func addFile(r *repo.Repository, path string) error {
 	// Normalize path
 	relPath = util.NormalizePath(relPath)
 
+	// Skip .msync directory and contents
+	if strings.HasPrefix(relPath, ".msync/") || relPath == ".msync" {
+		return nil
+	}
+
 	// Check if ignored
 	if r.Ignore != nil && r.Ignore.IsIgnored(relPath, false) {
 		return nil // Silently skip ignored files
@@ -83,10 +89,18 @@ func addFile(r *repo.Repository, path string) error {
 		// Add all files in directory
 		return util.WalkDir(absPath, func(p string, fi os.FileInfo) error {
 			if fi.IsDir() {
+				base := filepath.Base(p)
+				if base == ".msync" {
+					return filepath.SkipDir
+				}
 				return nil
 			}
 			rp, _ := util.RelPath(r.Path, p)
-			if r.Ignore != nil && r.Ignore.IsIgnored(util.NormalizePath(rp), false) {
+			nrp := util.NormalizePath(rp)
+			if strings.HasPrefix(nrp, ".msync/") || nrp == ".msync" {
+				return nil
+			}
+			if r.Ignore != nil && r.Ignore.IsIgnored(nrp, false) {
 				return nil
 			}
 			return addFile(r, p)
@@ -119,19 +133,26 @@ func addAll(r *repo.Repository) error {
 	// Walk working directory and add all modified/new files
 	cwd, _ := util.CurrentDir()
 	return util.WalkDir(cwd, func(path string, info os.FileInfo) error {
-		if info.IsDir() {
-			name := filepath.Base(path)
-			if name == ".msync" || (r.Ignore != nil && r.Ignore.IsIgnored(path, true)) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
 		relPath, err := util.RelPath(r.Path, path)
 		if err != nil {
 			return err
 		}
 		relPath = util.NormalizePath(relPath)
+
+		if info.IsDir() {
+			if relPath == ".msync" || strings.HasPrefix(relPath, ".msync/") {
+				return filepath.SkipDir
+			}
+			if r.Ignore != nil && r.Ignore.IsIgnored(relPath, true) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Skip .msync contents
+		if strings.HasPrefix(relPath, ".msync/") || relPath == ".msync" {
+			return nil
+		}
 
 		if r.Ignore != nil && r.Ignore.IsIgnored(relPath, false) {
 			return nil

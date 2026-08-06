@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/MinusSync/internal/object"
 	"github.com/MinusSync/internal/repo"
@@ -70,16 +71,21 @@ func showStatus(r *repo.Repository, short bool) error {
 
 	cwd, _ := util.CurrentDir()
 	util.WalkDir(cwd, func(path string, info os.FileInfo) error {
+		relPath, _ := util.RelPath(r.Path, path)
+		relPath = util.NormalizePath(relPath)
+
+		// Skip .msync directory and all its contents
 		if info.IsDir() {
-			name := filepath.Base(path)
-			if name == ".msync" {
+			if filepath.Base(path) == ".msync" || strings.Contains(relPath, "/.msync/") {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
-		relPath, _ := util.RelPath(r.Path, path)
-		relPath = util.NormalizePath(relPath)
+		// Skip any file under .msync
+		if strings.Contains(relPath, "/.msync/") || strings.HasPrefix(relPath, ".msync/") {
+			return nil
+		}
 
 		if r.Ignore != nil && r.Ignore.IsIgnored(relPath, false) {
 			return nil

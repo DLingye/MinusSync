@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/MinusSync/internal/hash"
 	"github.com/MinusSync/internal/object"
@@ -36,11 +37,20 @@ func diffCmd() *cobra.Command {
 	return cmd
 }
 
+// shouldSkipPath reports whether a relative path should be excluded from scanning.
+func shouldSkipPath(info os.FileInfo, relPath string) bool {
+	if info.IsDir() && (relPath == ".msync" || strings.HasPrefix(relPath, ".msync/")) {
+		return true
+	}
+	if !info.IsDir() && strings.HasPrefix(relPath, ".msync/") {
+		return true
+	}
+	return false
+}
+
 func showDiff(r *repo.Repository, staged, statOnly bool) error {
-	// Get HEAD tree
 	headHash, err := r.Refs.ResolveHEAD(r.HeadPath())
 	if err != nil {
-		// No HEAD commit yet — everything is new
 		return showDiffWorkingVsIndex(r, statOnly)
 	}
 
@@ -60,14 +70,19 @@ func showDiffWorkingVsIndex(r *repo.Repository, statOnly bool) error {
 	files := 0
 
 	util.WalkDir(cwd, func(path string, info os.FileInfo) error {
-		if info.IsDir() {
-			if filepath.Base(path) == ".msync" {
+		relPath, _ := util.RelPath(r.Path, path)
+		relPath = util.NormalizePath(relPath)
+
+		if shouldSkipPath(info, relPath) {
+			if info.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		relPath, _ := util.RelPath(r.Path, path)
-		relPath = util.NormalizePath(relPath)
+
+		if info.IsDir() {
+			return nil
+		}
 
 		if r.Ignore != nil && r.Ignore.IsIgnored(relPath, false) {
 			return nil
@@ -101,13 +116,15 @@ func showDiffWorkingVsIndex(r *repo.Repository, statOnly bool) error {
 }
 
 func showDiffIndexVsTree(r *repo.Repository, treeHash hash.Hash, statOnly bool) error {
-	// Get files in tree
 	_, treeMap, err := object.ListTree(r.ObjectsPath(), treeHash)
 	if err != nil {
 		return err
 	}
 
 	for _, entry := range r.Index.Entries {
+		if shouldSkipPath(nil, entry.Path) {
+			continue
+		}
 		treeEntry, inTree := treeMap[entry.Path]
 		if !inTree {
 			fmt.Printf("new file:   %s\n", entry.Path)
@@ -128,35 +145,36 @@ func showDiffWorkingVsTree(r *repo.Repository, treeHash hash.Hash, statOnly bool
 
 	files := 0
 	util.WalkDir(cwd, func(path string, info os.FileInfo) error {
-		if info.IsDir() {
-			if filepath.Base(path) == ".msync" {
+		relPath, _ := util.RelPath(r.Path, path)
+		relPath = util.NormalizePath(relPath)
+
+		if shouldSkipPath(info, relPath) {
+			if info.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		relPath, _ := util.RelPath(r.Path, path)
-		relPath = util.NormalizePath(relPath)
+
+		if info.IsDir() {
+			return nil
+		}
 
 		if r.Ignore != nil && r.Ignore.IsIgnored(relPath, false) {
 			return nil
 		}
 
-		// Check index entry first (fast path)
 		entry := r.Index.Find(relPath)
-
 		if entry != nil {
 			dirty, _ := r.Index.Dirty(relPath, info)
 			if !dirty {
-				// File matches index — check if index differs from tree
 				if treeEntry, inTree := treeMap[relPath]; inTree {
 					if treeEntry.Hash.Equal(entry.Hash) {
-						return nil // No change
+						return nil
 					}
 				}
 			}
 		}
 
-		// File is modified or new
 		if statOnly {
 			files++
 		} else {
@@ -173,6 +191,7 @@ func showDiffWorkingVsTree(r *repo.Repository, treeHash hash.Hash, statOnly bool
 	if statOnly {
 		fmt.Printf("%d files changed\n", files)
 	}
+	_ = treeMap
 	return nil
 }
 

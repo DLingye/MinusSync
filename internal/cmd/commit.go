@@ -20,10 +20,6 @@ func commitCmd() *cobra.Command {
 		Short: "Create a new commit",
 		Long:  `Record changes to the repository by creating a new commit.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if message == "" {
-				return fmt.Errorf("commit message required (-m)")
-			}
-
 			r, err := repo.Open(".")
 			if err != nil {
 				return err
@@ -43,7 +39,6 @@ func commitCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&message, "message", "m", "", "Commit message")
 	cmd.Flags().BoolVarP(&all, "all", "a", false, "Automatically stage all modified files")
 	cmd.Flags().StringVar(&author, "author", "", "Override author name")
-	cmd.MarkFlagRequired("message")
 
 	return cmd
 }
