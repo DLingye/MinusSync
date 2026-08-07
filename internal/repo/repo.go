@@ -13,19 +13,17 @@ import (
 
 // Layout constants for the .msync directory structure.
 const (
-	MsyncDir      = ".msync"
-	ObjectsDir    = "objects"
-	PackDir       = "objects/pack"
-	RefsDir       = "refs"
-	HeadsDir      = "refs/heads"
-	TagsDir       = "refs/tags"
-	RemotesDir    = "refs/remotes"
-	HeadFile      = "HEAD"
-	IndexFile     = "index"
-	ConfigFile    = "config"
-	IgnoreFile    = ".msyncign"
-	SearchDir     = "search"
-	DefaultBranch = "main"
+	MsyncDir   = ".msync"
+	ObjectsDir = "objects"
+	PackDir    = "objects/pack"
+	RefsDir    = "refs"
+	TagsDir    = "refs/tags"
+	RemotesDir = "refs/remotes"
+	HeadFile   = "HEAD"
+	IndexFile  = "index"
+	ConfigFile = "config"
+	IgnoreFile = ".msyncign"
+	SearchDir  = "search"
 )
 
 // Repository represents an open MinusSync repository.

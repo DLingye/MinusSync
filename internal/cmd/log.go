@@ -12,9 +12,7 @@ import (
 
 func logCmd() *cobra.Command {
 	var oneline bool
-	var graph bool
 	var maxCount int
-	var showAll bool
 
 	cmd := &cobra.Command{
 		Use:   "log",
@@ -32,19 +30,16 @@ func logCmd() *cobra.Command {
 				return err
 			}
 
-			return showLog(r, headHash, oneline, graph, maxCount, showAll)
+			return showLog(r, headHash, oneline, maxCount)
 		},
 	}
 
 	cmd.Flags().BoolVar(&oneline, "oneline", false, "Compact one-line format")
-	cmd.Flags().BoolVar(&graph, "graph", false, "Show ASCII graph of branch history")
 	cmd.Flags().IntVarP(&maxCount, "max-count", "n", 0, "Limit number of commits")
-	cmd.Flags().BoolVar(&showAll, "all", false, "Show all branches")
 	return cmd
 }
 
-func showLog(r *repo.Repository, startHash hash.Hash, oneline, graph bool, maxCount int, showAll bool) error {
-	// Walk commits from HEAD following parent pointers
+func showLog(r *repo.Repository, startHash hash.Hash, oneline bool, maxCount int) error {
 	current := startHash
 	count := 0
 
@@ -63,27 +58,22 @@ func showLog(r *repo.Repository, startHash hash.Hash, oneline, graph bool, maxCo
 			if idx := strings.IndexByte(msg, '\n'); idx >= 0 {
 				msg = msg[:idx]
 			}
-			if graph {
-				fmt.Printf("* ")
+			if msg == "" {
+				msg = "(no message)"
 			}
-			fmt.Printf("%s %s\n", current.String(), msg)
+			fmt.Printf("%s #%d %s\n", yellow(current.String()), commit.Sequence, msg)
 		} else {
-			fmt.Printf("commit %s\n", current.Hex())
-			if len(commit.Parents) > 1 {
-				fmt.Printf("Merge:")
-				for _, p := range commit.Parents {
-					fmt.Printf(" %s", p.String())
-				}
-				fmt.Println()
-			}
+			fmt.Printf("%s %s (#%d)\n", yellow("commit"), current.Hex(), commit.Sequence)
 			fmt.Printf("Author: %s <%s>\n", commit.Author, commit.Email)
-			fmt.Printf("Date:   %s\n", object.FormatTimestamp(commit.Timestamp))
-			fmt.Printf("\n    %s\n\n", strings.ReplaceAll(commit.Message, "\n", "\n    "))
+			fmt.Printf("Date:   %s\n", object.FormatTimestamp(commit.Timestamp, commit.TZOffset))
+			if commit.Message != "" {
+				fmt.Printf("\n    %s\n", strings.ReplaceAll(commit.Message, "\n", "\n    "))
+			}
+			fmt.Println()
 		}
 
 		count++
 
-		// Follow first parent (for simple history)
 		if len(commit.Parents) > 0 {
 			current = commit.Parents[0]
 		} else {

@@ -18,9 +18,9 @@ func diffCmd() *cobra.Command {
 	var statOnly bool
 
 	cmd := &cobra.Command{
-		Use:   "diff [--staged] [ref] [--] [path]",
+		Use:   "diff [--staged]",
 		Short: "Show changes",
-		Long:  "Show changes between commits, the index, and the working tree.",
+		Long:  "Show changes between the index, working tree, and HEAD.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := repo.Open(".")
 			if err != nil {
@@ -37,13 +37,14 @@ func diffCmd() *cobra.Command {
 	return cmd
 }
 
-// shouldSkipPath reports whether a relative path should be excluded from scanning.
 func shouldSkipPath(info os.FileInfo, relPath string) bool {
-	if info.IsDir() && (relPath == ".msync" || strings.HasPrefix(relPath, ".msync/")) {
+	if info != nil && info.IsDir() && (relPath == ".msync" || strings.HasPrefix(relPath, ".msync/")) {
 		return true
 	}
-	if !info.IsDir() && strings.HasPrefix(relPath, ".msync/") {
-		return true
+	if info == nil || !info.IsDir() {
+		if strings.HasPrefix(relPath, ".msync/") {
+			return true
+		}
 	}
 	return false
 }
@@ -79,11 +80,9 @@ func showDiffWorkingVsIndex(r *repo.Repository, statOnly bool) error {
 			}
 			return nil
 		}
-
 		if info.IsDir() {
 			return nil
 		}
-
 		if r.Ignore != nil && r.Ignore.IsIgnored(relPath, false) {
 			return nil
 		}
@@ -93,7 +92,7 @@ func showDiffWorkingVsIndex(r *repo.Repository, statOnly bool) error {
 			if statOnly {
 				files++
 			} else {
-				fmt.Printf("new file: %s\n", relPath)
+				fmt.Printf("%s: %s\n", green("new file"), relPath)
 			}
 			return nil
 		}
@@ -103,7 +102,7 @@ func showDiffWorkingVsIndex(r *repo.Repository, statOnly bool) error {
 			if statOnly {
 				files++
 			} else {
-				fmt.Printf("modified: %s\n", relPath)
+				fmt.Printf("%s: %s\n", red("modified"), relPath)
 			}
 		}
 		return nil
@@ -127,12 +126,11 @@ func showDiffIndexVsTree(r *repo.Repository, treeHash hash.Hash, statOnly bool) 
 		}
 		treeEntry, inTree := treeMap[entry.Path]
 		if !inTree {
-			fmt.Printf("new file:   %s\n", entry.Path)
+			fmt.Printf("%s:   %s\n", green("new file"), entry.Path)
 		} else if !treeEntry.Hash.Equal(entry.Hash) {
-			fmt.Printf("modified:   %s\n", entry.Path)
+			fmt.Printf("%s:   %s\n", green("modified"), entry.Path)
 		}
 	}
-
 	return nil
 }
 
@@ -154,11 +152,9 @@ func showDiffWorkingVsTree(r *repo.Repository, treeHash hash.Hash, statOnly bool
 			}
 			return nil
 		}
-
 		if info.IsDir() {
 			return nil
 		}
-
 		if r.Ignore != nil && r.Ignore.IsIgnored(relPath, false) {
 			return nil
 		}
@@ -180,9 +176,9 @@ func showDiffWorkingVsTree(r *repo.Repository, treeHash hash.Hash, statOnly bool
 		} else {
 			_, inTree := treeMap[relPath]
 			if inTree {
-				fmt.Printf("modified:   %s\n", relPath)
+				fmt.Printf("%s:   %s\n", red("modified"), relPath)
 			} else {
-				fmt.Printf("new file:   %s\n", relPath)
+				fmt.Printf("%s: %s\n", cyan("new file"), relPath)
 			}
 		}
 		return nil
@@ -191,9 +187,7 @@ func showDiffWorkingVsTree(r *repo.Repository, treeHash hash.Hash, statOnly bool
 	if statOnly {
 		fmt.Printf("%d files changed\n", files)
 	}
-	_ = treeMap
 	return nil
 }
 
-// Ensure os import is used
 var _ = os.Getpagesize

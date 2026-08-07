@@ -9,7 +9,7 @@ import (
 	"github.com/MinusSync/internal/repo"
 )
 
-// Fetch downloads objects and refs from a remote without merging.
+// Fetch downloads objects and refs from a remote without modifying the working tree.
 func Fetch(r *repo.Repository, remoteName string) error {
 	ref, err := GetRemote(r.Config, remoteName)
 	if err != nil {
@@ -45,15 +45,16 @@ func Fetch(r *repo.Repository, remoteName string) error {
 		}
 	}
 
-	// For each remote ref we don't have, fetch objects
+	// Fetch HEAD
 	for _, remoteRef := range remoteRefs {
-		// Check if we already have this object
-		localHash, err := r.Refs.GetRemoteRef(remoteName, remoteRef.Name)
+		if remoteRef.Name != "HEAD" {
+			continue
+		}
+		localHash, err := r.Refs.GetRemoteRef(remoteName, "HEAD")
 		if err == nil && localHash.Equal(remoteRef.Hash) {
 			continue // Already up to date
 		}
 
-		// Fetch objects for this ref
 		conn.Send(protocol.MsgFetchRequest, nil)
 		conn.Send(protocol.MsgWanted, protocol.EncodeWanted(remoteRef.Hash))
 		if !localHash.IsZero() {
@@ -63,7 +64,6 @@ func Fetch(r *repo.Repository, remoteName string) error {
 		}
 		conn.Send(protocol.MsgFetchDone, nil)
 
-		// Read pack data
 		for {
 			msgType, payload, err := conn.Recv()
 			if err != nil {
@@ -73,13 +73,11 @@ func Fetch(r *repo.Repository, remoteName string) error {
 				break
 			}
 			if msgType == protocol.MsgPackObject {
-				// Store objects
 				_ = payload
 			}
 		}
 
-		// Update remote tracking ref
-		r.Refs.SetRemoteRef(remoteName, remoteRef.Name, remoteRef.Hash)
+		r.Refs.SetRemoteRef(remoteName, "HEAD", remoteRef.Hash)
 	}
 
 	fmt.Printf("Fetched from %s\n", remoteName)

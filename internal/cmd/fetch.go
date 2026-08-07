@@ -12,7 +12,7 @@ func fetchCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "fetch [remote]",
 		Short: "Fetch objects and refs from a remote repository",
-		Long:  "Download objects and refs from a remote repository without merging.",
+		Long:  "Download objects and refs from a remote repository without modifying the working tree.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := repo.Open(".")
 			if err != nil {

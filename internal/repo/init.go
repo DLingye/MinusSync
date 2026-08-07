@@ -5,23 +5,19 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/MinusSync/internal/hash"
 	"github.com/MinusSync/internal/index"
-	"github.com/MinusSync/internal/refs"
 	"github.com/MinusSync/internal/util"
 )
 
 // InitOptions configures repository initialization.
 type InitOptions struct {
-	Path   string // Target directory
-	Bare   bool   // Create a bare repository (no working tree)
-	Branch string // Initial branch name (default: "main")
+	Path string // Target directory
+	Bare bool   // Create a bare repository (no working tree)
 }
 
 // Init creates a new MinusSync repository.
 func Init(opts InitOptions) (*Repository, error) {
-	if opts.Branch == "" {
-		opts.Branch = DefaultBranch
-	}
 	if opts.Path == "" {
 		var err error
 		opts.Path, err = util.CurrentDir()
@@ -49,11 +45,10 @@ func Init(opts InitOptions) (*Repository, error) {
 		return nil, fmt.Errorf("create .msync: %w", err)
 	}
 
-	// Create subdirectories
+	// Create subdirectories (no heads dir - single branch repository)
 	dirs := []string{
 		filepath.Join(msyncPath, ObjectsDir),
 		filepath.Join(msyncPath, PackDir),
-		filepath.Join(msyncPath, RefsDir, HeadsDir),
 		filepath.Join(msyncPath, RefsDir, TagsDir),
 		filepath.Join(msyncPath, RefsDir, RemotesDir),
 		filepath.Join(msyncPath, SearchDir),
@@ -64,11 +59,9 @@ func Init(opts InitOptions) (*Repository, error) {
 		}
 	}
 
-	// Create HEAD file pointing to the initial branch
+	// Create HEAD file pointing to zero hash (no commits yet)
 	headPath := filepath.Join(msyncPath, HeadFile)
-	headRef := refs.HeadsDir + "/" + opts.Branch
-	headContent := refs.HeadRefPrefix + RefsDir + "/" + headRef + "\n"
-	if err := os.WriteFile(headPath, []byte(headContent), 0644); err != nil {
+	if err := os.WriteFile(headPath, []byte(hash.Zero.Hex()+"\n"), 0644); err != nil {
 		return nil, fmt.Errorf("create HEAD: %w", err)
 	}
 

@@ -11,12 +11,12 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "msync",
-	Short: "MinusSync v" + cmd.Version + " build" + cmd.BuildNum + " — version control and file synchronization",
-	Long: `MinusSync (msync) v` + cmd.Version + ` build` + cmd.BuildNum + ` — a version control and file
+	Short: "MinusSync v" + cmd.Version + " Build" + cmd.BuildNum + " — version control and file synchronization",
+	Long: `MinusSync (msync) v` + cmd.Version + ` Build` + cmd.BuildNum + ` — a version control and file
 synchronization system similar to git and lix. It supports code, markdown,
 and binary files with features including version management, remote sync,
 semantic search, and binary incremental sync.`,
-	Version: cmd.Version + " build" + cmd.BuildNum,
+	Version: cmd.Version + " Build" + cmd.BuildNum,
 	Run: func(c *cobra.Command, args []string) {
 		c.Help()
 	},

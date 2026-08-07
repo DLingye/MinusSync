@@ -19,8 +19,7 @@ func Clone(url, dir, remoteName string) (*repo.Repository, error) {
 
 	// Initialize local repository
 	r, err := repo.Init(repo.InitOptions{
-		Path:   dir,
-		Branch: repo.DefaultBranch,
+		Path: dir,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("init local repo: %w", err)
@@ -66,10 +65,10 @@ func Clone(url, dir, remoteName string) (*repo.Repository, error) {
 		return nil, fmt.Errorf("no refs advertised by remote")
 	}
 
-	// Find the default branch (HEAD)
+	// Find HEAD ref
 	headHash := hash.Zero
 	for _, ref := range remoteRefs {
-		if ref.Name == "refs/heads/"+repo.DefaultBranch || ref.Name == "refs/heads/master" {
+		if ref.Name == "HEAD" {
 			headHash = ref.Hash
 			break
 		}
@@ -88,9 +87,8 @@ func Clone(url, dir, remoteName string) (*repo.Repository, error) {
 		r.Refs.SetRemoteRef(remoteName, ref.Name, ref.Hash)
 	}
 
-	// Set HEAD to default branch
-	r.Refs.SetBranch(repo.DefaultBranch, headHash)
-	r.Refs.WriteHeadSymbolic(r.HeadPath(), repo.HeadsDir+"/"+repo.DefaultBranch)
+	// Set HEAD
+	r.Refs.WriteHead(r.HeadPath(), headHash)
 
 	// Checkout the tree
 	commit, err := object.ReadCommit(r.ObjectsPath(), headHash)
@@ -113,13 +111,11 @@ func Clone(url, dir, remoteName string) (*repo.Repository, error) {
 
 // fetchObjects downloads all objects reachable from wantHash via the connection.
 func fetchObjects(conn *net.Connection, objectsDir string, wantHash hash.Hash) error {
-	// Send fetch request
 	conn.Send(protocol.MsgFetchRequest, nil)
 	conn.Send(protocol.MsgWanted, protocol.EncodeWanted(wantHash))
 	conn.Send(protocol.MsgHave, protocol.EncodeWanted(hash.Zero))
 	conn.Send(protocol.MsgFetchDone, nil)
 
-	// Read pack data
 	for {
 		msgType, payload, err := conn.Recv()
 		if err != nil {
@@ -134,11 +130,10 @@ func fetchObjects(conn *net.Connection, objectsDir string, wantHash hash.Hash) e
 			return fmt.Errorf("remote error: %s (code=%d)", msg, code)
 		}
 		if msgType == protocol.MsgPackObject {
-			// Each PACK_OBJECT is: [32:hash][1:type][4:compressed_len][N:zstd_data]
 			if len(payload) < 37 {
 				continue
 			}
-			_ = payload // Processed in full implementation
+			_ = payload
 		}
 	}
 

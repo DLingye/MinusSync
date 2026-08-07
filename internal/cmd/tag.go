@@ -14,7 +14,7 @@ func tagCmd() *cobra.Command {
 	var message string
 
 	cmd := &cobra.Command{
-		Use:   "tag [-l] [-d <name>] [-a -m <msg>] [name] [ref]",
+		Use:   "tag [-l] [-d <name>] [-a -m <msg>] [name]",
 		Short: "List, create, or delete tags",
 		Long:  "Manage tags in the repository.",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -35,16 +35,10 @@ func tagCmd() *cobra.Command {
 			// Create tag
 			if len(args) > 0 {
 				name := args[0]
-				ref := "HEAD"
-				if len(args) > 1 {
-					ref = args[1]
-				}
-
-				var targetHash, err = r.Refs.ResolveHEAD(r.HeadPath())
+				targetHash, err := r.Refs.ResolveHEAD(r.HeadPath())
 				if err != nil {
-					return err
+					return fmt.Errorf("resolve HEAD: %w", err)
 				}
-				_ = ref // For now use HEAD
 
 				if annotated {
 					if message == "" {

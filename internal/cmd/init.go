@@ -9,7 +9,6 @@ import (
 
 func initCmd() *cobra.Command {
 	var bare bool
-	var branch string
 
 	cmd := &cobra.Command{
 		Use:   "init [path]",
@@ -24,9 +23,8 @@ If no path is given, the current directory is used.`,
 			}
 
 			_, err := repo.Init(repo.InitOptions{
-				Path:   path,
-				Bare:   bare,
-				Branch: branch,
+				Path: path,
+				Bare: bare,
 			})
 			if err != nil {
 				return err
@@ -41,7 +39,6 @@ If no path is given, the current directory is used.`,
 	}
 
 	cmd.Flags().BoolVar(&bare, "bare", false, "Create a bare repository")
-	cmd.Flags().StringVarP(&branch, "initial-branch", "b", "main", "Initial branch name")
 
 	return cmd
 }

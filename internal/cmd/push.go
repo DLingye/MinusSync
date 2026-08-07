@@ -13,7 +13,7 @@ func pushCmd() *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
-		Use:   "push [remote] [branch]",
+		Use:   "push [remote]",
 		Short: "Push changes to a remote repository",
 		Long:  "Push local commits to a remote repository.",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -28,18 +28,10 @@ func pushCmd() *cobra.Command {
 				remote = args[0]
 			}
 
-			branch, err := r.Refs.CurrentBranch(r.HeadPath())
-			if err != nil || branch == "" {
-				return fmt.Errorf("not on a branch: cannot push")
-			}
-			if len(args) > 1 {
-				branch = args[1]
-			}
-
 			_ = setUpstream
 			_ = force
 
-			if err := sync.Push(r, remote, branch); err != nil {
+			if err := sync.Push(r, remote); err != nil {
 				return fmt.Errorf("push failed: %w", err)
 			}
 			return nil

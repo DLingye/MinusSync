@@ -42,7 +42,11 @@ func configCmd() *cobra.Command {
 				}
 				section, key := parseConfigKey(args[0])
 				r.Config.Unset(section, key)
-				return r.SaveConfig()
+				if err := r.SaveConfig(); err != nil {
+					return err
+				}
+				fmt.Printf("unset %s.%s\n", section, key)
+				return nil
 			}
 
 			if len(args) == 1 {
@@ -54,6 +58,8 @@ func configCmd() *cobra.Command {
 				value := r.Config.Get(section, key)
 				if value != "" {
 					fmt.Println(value)
+				} else {
+					fmt.Printf("(not set) %s.%s\n", section, key)
 				}
 				return nil
 			}
@@ -66,7 +72,11 @@ func configCmd() *cobra.Command {
 				section, key := parseConfigKey(args[0])
 				value := strings.Join(args[1:], " ")
 				r.Config.Set(section, key, value)
-				return r.SaveConfig()
+				if err := r.SaveConfig(); err != nil {
+					return err
+				}
+				fmt.Printf("set %s.%s = %s\n", section, key, value)
+				return nil
 			}
 
 			return nil

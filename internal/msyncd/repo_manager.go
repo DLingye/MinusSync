@@ -28,18 +28,13 @@ func NewRepoManager(path string, readOnly bool) (*RepoManager, error) {
 func (rm *RepoManager) ListRefs() (map[string]hash.Hash, error) {
 	refs := make(map[string]hash.Hash)
 
-	branches, err := rm.repo.Refs.ListBranches()
-	if err != nil {
-		return nil, err
-	}
-	for _, b := range branches {
-		h, err := rm.repo.Refs.GetBranch(b)
-		if err != nil {
-			continue
-		}
-		refs["refs/heads/"+b] = h
+	// HEAD (single timeline)
+	headHash, err := rm.repo.Refs.ResolveHEAD(rm.repo.HeadPath())
+	if err == nil && !headHash.IsZero() {
+		refs["HEAD"] = headHash
 	}
 
+	// Tags
 	tags, err := rm.repo.Refs.ListTags()
 	if err != nil {
 		return nil, err

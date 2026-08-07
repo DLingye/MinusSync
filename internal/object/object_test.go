@@ -112,7 +112,7 @@ func TestCommitRoundtrip(t *testing.T) {
 
 	treeHash, _ := WriteBlob(dir, []byte("dummy"))
 
-	c := NewCommitData(treeHash, nil, "Test User", "test@test.com", "host", "test commit")
+	c := NewCommitData(treeHash, nil, "Test User", "test@test.com", "host", "test commit", 0)
 	commitHash, err := WriteCommit(dir, c)
 	if err != nil {
 		t.Fatal(err)

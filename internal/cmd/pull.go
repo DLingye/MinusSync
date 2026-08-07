@@ -10,9 +10,9 @@ import (
 
 func pullCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "pull [remote] [branch]",
+		Use:   "pull [remote]",
 		Short: "Pull changes from a remote repository",
-		Long:  "Fetch and merge changes from a remote repository.",
+		Long:  "Fetch changes from a remote repository and update the working tree.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			r, err := repo.Open(".")
 			if err != nil {
@@ -25,12 +25,7 @@ func pullCmd() *cobra.Command {
 				remote = args[0]
 			}
 
-			branch, _ := r.Refs.CurrentBranch(r.HeadPath())
-			if len(args) > 1 {
-				branch = args[1]
-			}
-
-			if err := sync.Pull(r, remote, branch); err != nil {
+			if err := sync.Pull(r, remote); err != nil {
 				return fmt.Errorf("pull failed: %w", err)
 			}
 			return nil

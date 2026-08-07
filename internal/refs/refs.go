@@ -1,4 +1,4 @@
-// Package refs provides reference management for branches, tags, and remotes.
+// Package refs provides reference management for tags and remotes.
 package refs
 
 import (
@@ -13,7 +13,6 @@ import (
 
 // Directory names within .msync/refs/
 const (
-	HeadsDir   = "heads"
 	TagsDir    = "tags"
 	RemotesDir = "remotes"
 )
@@ -49,36 +48,6 @@ func writeRef(path string, h hash.Hash) error {
 	return util.WriteFile(path, []byte(h.Hex()+"\n"), 0644)
 }
 
-// GetBranch returns the hash for a branch.
-func (r *Refs) GetBranch(name string) (hash.Hash, error) {
-	return readRef(filepath.Join(r.refsDir, HeadsDir, name))
-}
-
-// SetBranch sets the hash for a branch.
-func (r *Refs) SetBranch(name string, h hash.Hash) error {
-	return writeRef(filepath.Join(r.refsDir, HeadsDir, name), h)
-}
-
-// DeleteBranch deletes a branch reference.
-func (r *Refs) DeleteBranch(name string) error {
-	path := filepath.Join(r.refsDir, HeadsDir, name)
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return fmt.Errorf("branch %q not found", name)
-	}
-	return os.Remove(path)
-}
-
-// ListBranches returns all branch names.
-func (r *Refs) ListBranches() ([]string, error) {
-	return listRefs(filepath.Join(r.refsDir, HeadsDir))
-}
-
-// HasBranch reports whether a branch exists.
-func (r *Refs) HasBranch(name string) bool {
-	_, err := os.Stat(filepath.Join(r.refsDir, HeadsDir, name))
-	return err == nil
-}
-
 // GetTag returns the hash for a tag (lightweight or annotated).
 func (r *Refs) GetTag(name string) (hash.Hash, error) {
 	return readRef(filepath.Join(r.refsDir, TagsDir, name))
@@ -103,14 +72,14 @@ func (r *Refs) ListTags() ([]string, error) {
 	return listRefs(filepath.Join(r.refsDir, TagsDir))
 }
 
-// GetRemoteRef returns the hash for a remote tracking branch.
-func (r *Refs) GetRemoteRef(remote, branch string) (hash.Hash, error) {
-	return readRef(filepath.Join(r.refsDir, RemotesDir, remote, branch))
+// GetRemoteRef returns the hash for a remote tracking ref.
+func (r *Refs) GetRemoteRef(remote, refName string) (hash.Hash, error) {
+	return readRef(filepath.Join(r.refsDir, RemotesDir, remote, refName))
 }
 
-// SetRemoteRef sets the hash for a remote tracking branch.
-func (r *Refs) SetRemoteRef(remote, branch string, h hash.Hash) error {
-	return writeRef(filepath.Join(r.refsDir, RemotesDir, remote, branch), h)
+// SetRemoteRef sets the hash for a remote tracking ref.
+func (r *Refs) SetRemoteRef(remote, refName string, h hash.Hash) error {
+	return writeRef(filepath.Join(r.refsDir, RemotesDir, remote, refName), h)
 }
 
 // ListRemotes returns all remote names.
@@ -132,8 +101,8 @@ func (r *Refs) ListRemotes() ([]string, error) {
 	return remotes, nil
 }
 
-// ListRemoteBranches returns all branch names tracked for a remote.
-func (r *Refs) ListRemoteBranches(remote string) ([]string, error) {
+// ListRemoteRefs returns all ref names tracked for a remote.
+func (r *Refs) ListRemoteRefs(remote string) ([]string, error) {
 	return listRefs(filepath.Join(r.refsDir, RemotesDir, remote))
 }
 

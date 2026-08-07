@@ -24,18 +24,15 @@ type Report struct {
 func Collect(repoPath, objectsDir, refsDir, headPath string, prune bool, verbose bool) (*Report, error) {
 	report := &Report{}
 
-	// 1. Mark: find all reachable objects from refs
+	// 1. Mark: find all reachable objects from HEAD and tags
 	reachable := make(map[string]bool)
 
-	// Start from all branches
 	refMgr := refs.New(refsDir)
-	branches, _ := refMgr.ListBranches()
-	for _, b := range branches {
-		h, err := refMgr.GetBranch(b)
-		if err != nil {
-			continue
-		}
-		markReachable(objectsDir, h, reachable)
+
+	// Start from HEAD
+	headHash, err := refMgr.ResolveHEAD(headPath)
+	if err == nil && !headHash.IsZero() {
+		markReachable(objectsDir, headHash, reachable)
 	}
 
 	// Start from all tags
@@ -48,18 +45,12 @@ func Collect(repoPath, objectsDir, refsDir, headPath string, prune bool, verbose
 		markReachable(objectsDir, h, reachable)
 	}
 
-	// Start from HEAD
-	headHash, err := refMgr.ResolveHEAD(headPath)
-	if err == nil && !headHash.IsZero() {
-		markReachable(objectsDir, headHash, reachable)
-	}
-
 	// Also mark remote tracking refs
 	remotes, _ := refMgr.ListRemotes()
 	for _, remote := range remotes {
-		remoteBranches, _ := refMgr.ListRemoteBranches(remote)
-		for _, b := range remoteBranches {
-			h, err := refMgr.GetRemoteRef(remote, b)
+		remoteRefs, _ := refMgr.ListRemoteRefs(remote)
+		for _, refName := range remoteRefs {
+			h, err := refMgr.GetRemoteRef(remote, refName)
 			if err != nil {
 				continue
 			}
@@ -136,7 +127,6 @@ func markReachable(objectsDir string, h hash.Hash, reachable map[string]bool) {
 	}
 	reachable[hex] = true
 
-	// Read the object to find its references
 	header, err := object.ReadHeader(objectsDir, h)
 	if err != nil {
 		return
@@ -174,5 +164,4 @@ func markReachable(objectsDir string, h hash.Hash, reachable map[string]bool) {
 	}
 }
 
-// Ensure fmt is used
 var _ = fmt.Sprintf

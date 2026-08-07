@@ -16,7 +16,7 @@ func commitCmd() *cobra.Command {
 	var author string
 
 	cmd := &cobra.Command{
-		Use:   "commit -m <message>",
+		Use:   "commit [-m <message>]",
 		Short: "Create a new commit",
 		Long:  `Record changes to the repository by creating a new commit.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -56,8 +56,18 @@ func createCommit(r *repo.Repository, message, authorOverride string) error {
 
 	// Get parent commit (current HEAD)
 	var parents []hash.Hash
+	parentSeq := uint64(0)
 	headHash, err := r.Refs.ResolveHEAD(r.HeadPath())
+
+	// Check if anything actually changed compared to HEAD
 	if err == nil && !headHash.IsZero() {
+		headCommit, err := object.ReadCommit(r.ObjectsPath(), headHash)
+		if err == nil && headCommit.Tree.Equal(treeHash) {
+			return fmt.Errorf("nothing to commit, working tree clean")
+		}
+		if err == nil {
+			parentSeq = headCommit.Sequence
+		}
 		parents = []hash.Hash{headHash}
 	}
 
@@ -71,23 +81,15 @@ func createCommit(r *repo.Repository, message, authorOverride string) error {
 	hostname := util.Hostname()
 
 	// Create commit
-	commitData := object.NewCommitData(treeHash, parents, authorName, authorEmail, hostname, message)
+	commitData := object.NewCommitData(treeHash, parents, authorName, authorEmail, hostname, message, parentSeq)
 	commitHash, err := object.WriteCommit(r.ObjectsPath(), commitData)
 	if err != nil {
 		return fmt.Errorf("write commit: %w", err)
 	}
 
-	// Update HEAD ref
-	branchName, err := r.Refs.CurrentBranch(r.HeadPath())
-	if err != nil {
-		return err
-	}
-	if branchName == "" {
-		return fmt.Errorf("detached HEAD: cannot commit (use 'msync checkout -b <branch>' first)")
-	}
-
-	if err := r.Refs.SetBranch(branchName, commitHash); err != nil {
-		return fmt.Errorf("update branch: %w", err)
+	// Update HEAD directly (single-branch model)
+	if err := r.Refs.WriteHead(r.HeadPath(), commitHash); err != nil {
+		return fmt.Errorf("update HEAD: %w", err)
 	}
 
 	// Save index
@@ -95,13 +97,11 @@ func createCommit(r *repo.Repository, message, authorOverride string) error {
 		return err
 	}
 
-	fmt.Printf("[%s] %s\n", commitHash.String(), message)
+	fmt.Printf("[%s #%d] %s\n", commitHash.String(), commitData.Sequence, message)
 	return nil
 }
 
 func buildTreeFromIndex(r *repo.Repository) (hash.Hash, error) {
-	// Group index entries by directory and build trees bottom-up
-	// For simplicity, build a flat tree with all entries
 	var entries []object.TreeEntry
 	for _, e := range r.Index.Entries {
 		entries = append(entries, object.TreeEntry{

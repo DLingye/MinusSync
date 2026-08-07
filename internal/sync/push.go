@@ -11,7 +11,7 @@ import (
 )
 
 // Push sends local commits to a remote repository.
-func Push(r *repo.Repository, remoteName, branch string) error {
+func Push(r *repo.Repository, remoteName string) error {
 	ref, err := GetRemote(r.Config, remoteName)
 	if err != nil {
 		return fmt.Errorf("get remote: %w", err)
@@ -24,23 +24,39 @@ func Push(r *repo.Repository, remoteName, branch string) error {
 	}
 	defer conn.Close()
 
-	// Get local hash
-	localHash, err := r.Refs.GetBranch(branch)
+	// Get local HEAD and sequence
+	localHash, err := r.Refs.ResolveHEAD(r.HeadPath())
 	if err != nil {
-		return fmt.Errorf("local branch %q: %w", branch, err)
+		return fmt.Errorf("resolve HEAD: %w", err)
 	}
+	localCommit, err := object.ReadCommit(r.ObjectsPath(), localHash)
+	if err != nil {
+		return fmt.Errorf("read local commit: %w", err)
+	}
+	localSeq := localCommit.Sequence
 
-	// Get remote tracking hash
+	// Get remote tracking hash and sequence
 	oldHash := hash.Zero
-	remoteHash, err := r.Refs.GetRemoteRef(remoteName, "refs/heads/"+branch)
+	var remoteSeq uint64
+	remoteHash, err := r.Refs.GetRemoteRef(remoteName, "HEAD")
 	if err == nil {
 		oldHash = remoteHash
+		remoteCommit, err := object.ReadCommit(r.ObjectsPath(), remoteHash)
+		if err == nil {
+			remoteSeq = remoteCommit.Sequence
+		}
+	}
+
+	// Sequence-based conflict detection:
+	// If remote has higher sequence, remote is ahead of us
+	// If we have higher sequence but different hash, we are ahead (force push needed or remote diverged)
+	if oldHash != hash.Zero && !oldHash.Equal(localHash) && remoteSeq > localSeq {
+		return fmt.Errorf("push rejected: remote has newer commits (remote seq=%d, local seq=%d). Use 'msync pull' first", remoteSeq, localSeq)
 	}
 
 	// Send push request
 	conn.Send(protocol.MsgPushRequest, nil)
-	refName := "refs/heads/" + branch
-	conn.Send(protocol.MsgUpdateRef, protocol.EncodeUpdateRef(refName, oldHash, localHash))
+	conn.Send(protocol.MsgUpdateRef, protocol.EncodeUpdateRef("HEAD", oldHash, localHash))
 
 	// Wait for server response
 	msgType, payload, err := conn.Recv()
@@ -50,20 +66,17 @@ func Push(r *repo.Repository, remoteName, branch string) error {
 
 	switch msgType {
 	case protocol.MsgWantPack:
-		// Server wants us to send pack
 		if err := sendPack(conn, r.ObjectsPath(), oldHash, localHash); err != nil {
 			return fmt.Errorf("send pack: %w", err)
 		}
 
-		// Wait for final acknowledgment
 		msgType, payload, err = conn.Recv()
 		if err != nil {
 			return fmt.Errorf("receive ack: %w", err)
 		}
 		if msgType == protocol.MsgOK {
-			// Update remote tracking ref
-			r.Refs.SetRemoteRef(remoteName, refName, localHash)
-			fmt.Printf("Pushed %s to %s/%s\n", localHash.String(), remoteName, branch)
+			r.Refs.SetRemoteRef(remoteName, "HEAD", localHash)
+			fmt.Printf("Pushed %s to %s\n", localHash.String(), remoteName)
 			return nil
 		}
 		if msgType == protocol.MsgError {
@@ -86,18 +99,15 @@ func Push(r *repo.Repository, remoteName, branch string) error {
 
 // sendPack sends all objects between oldHash and newHash.
 func sendPack(conn *net.Connection, objectsDir string, oldHash, newHash hash.Hash) error {
-	// Compute the set of objects to send
 	objSet, err := computeObjectDiff(objectsDir, oldHash, newHash)
 	if err != nil {
 		return err
 	}
 
-	// Send pack header
 	countBytes := make([]byte, 4)
 	object.WriteUint32(countBytes, uint32(len(objSet)))
 	conn.Send(protocol.MsgPackHeader, countBytes)
 
-	// Send each object
 	for _, h := range objSet {
 		data, err := object.ReadRaw(objectsDir, h)
 		if err != nil {
@@ -107,20 +117,17 @@ func sendPack(conn *net.Connection, objectsDir string, oldHash, newHash hash.Has
 		conn.Send(protocol.MsgPackObject, payload)
 	}
 
-	// End of pack
 	conn.Send(protocol.MsgStreamEnd, nil)
 	return nil
 }
 
 // computeObjectDiff finds all objects reachable from newHash but not oldHash.
 func computeObjectDiff(objectsDir string, oldHash, newHash hash.Hash) ([]hash.Hash, error) {
-	// Mark reachable from oldHash
 	oldReachable := make(map[string]bool)
 	if !oldHash.IsZero() {
 		markReachableForPack(objectsDir, oldHash, oldReachable)
 	}
 
-	// Collect reachable from newHash that aren't in oldReachable
 	var diff []hash.Hash
 	newReachable := make(map[string]bool)
 	collectNewObjects(objectsDir, newHash, oldReachable, newReachable, &diff)

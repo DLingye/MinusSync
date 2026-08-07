@@ -13,25 +13,34 @@ import (
 type CommitData struct {
 	Tree      hash.Hash
 	Parents   []hash.Hash
+	Sequence  uint64 // Sequence number (1-based, increments each commit)
 	Author    string
 	Email     string
 	Hostname  string
-	Timestamp int64 // Unix seconds
+	Timestamp int64  // Unix seconds
+	TZOffset  int    // Timezone offset in seconds (e.g., 28800 for +0800)
 	Message   string
 }
 
 // NewCommitData creates a CommitData with the current time and hostname.
-func NewCommitData(tree hash.Hash, parents []hash.Hash, author, email, hostname, message string) *CommitData {
+func NewCommitData(tree hash.Hash, parents []hash.Hash, author, email, hostname, message string, parentSeq uint64) *CommitData {
 	if hostname == "" {
 		hostname = "unknown"
 	}
+	now := time.Now()
+	_, tzOffset := now.Zone()
+
+	seq := parentSeq + 1
+
 	return &CommitData{
 		Tree:      tree,
 		Parents:   parents,
+		Sequence:  seq,
 		Author:    author,
 		Email:     email,
 		Hostname:  hostname,
-		Timestamp: time.Now().Unix(),
+		Timestamp: now.Unix(),
+		TZOffset:  tzOffset,
 		Message:   message,
 	}
 }
@@ -45,11 +54,20 @@ func SerializeCommit(c *CommitData) []byte {
 		fmt.Fprintf(&b, "parent %s\n", p.Hex())
 	}
 
-	authorTime := time.Unix(c.Timestamp, 0)
-	fmt.Fprintf(&b, "author %s <%s> %d +0000\n", c.Author, c.Email, c.Timestamp)
-	fmt.Fprintf(&b, "committer %s <%s> %d +0000\n", c.Author, c.Email, c.Timestamp)
+	fmt.Fprintf(&b, "sequence %d\n", c.Sequence)
+
+	tzSign := "+"
+	if c.TZOffset < 0 {
+		tzSign = "-"
+		c.TZOffset = -c.TZOffset
+	}
+	tzHours := c.TZOffset / 3600
+	tzMins := (c.TZOffset % 3600) / 60
+	tzStr := fmt.Sprintf("%s%02d%02d", tzSign, tzHours, tzMins)
+
+	fmt.Fprintf(&b, "author %s <%s> %d %s\n", c.Author, c.Email, c.Timestamp, tzStr)
+	fmt.Fprintf(&b, "committer %s <%s> %d %s\n", c.Author, c.Email, c.Timestamp, tzStr)
 	fmt.Fprintf(&b, "hostname %s\n", c.Hostname)
-	fmt.Fprintf(&b, "date %s\n", authorTime.Format(time.RFC3339))
 	fmt.Fprintf(&b, "\n%s\n", c.Message)
 
 	return []byte(b.String())
@@ -87,18 +105,27 @@ func ParseCommit(data []byte) (*CommitData, error) {
 				return nil, fmt.Errorf("invalid parent hash in commit: %w", err)
 			}
 			c.Parents = append(c.Parents, h)
+		case "sequence":
+			seq, err := strconv.ParseUint(value, 10, 64)
+			if err == nil {
+				c.Sequence = seq
+			}
 		case "author":
-			c.Author, c.Email = parsePersonLine(value)
+			c.Author, c.Email, c.Timestamp, c.TZOffset = parsePersonLineFull(value)
 		case "committer":
-			// Use committer info if set; otherwise author is used for both
-			c.Author, c.Email = parsePersonLine(value)
+			a, e, ts, tz := parsePersonLineFull(value)
+			if a != "" {
+				c.Author = a
+			}
+			if e != "" {
+				c.Email = e
+			}
+			if ts != 0 {
+				c.Timestamp = ts
+				c.TZOffset = tz
+			}
 		case "hostname":
 			c.Hostname = value
-		case "date":
-			t, err := time.Parse(time.RFC3339, value)
-			if err == nil {
-				c.Timestamp = t.Unix()
-			}
 		default:
 			// Unknown fields are ignored for forward compatibility
 		}
@@ -118,15 +145,47 @@ func ParseCommit(data []byte) (*CommitData, error) {
 
 // parsePersonLine extracts name and email from a line like "Name <email>".
 func parsePersonLine(line string) (name, email string) {
-	name = line
+	name, email, _, _ = parsePersonLineFull(line)
+	return
+}
+
+// parsePersonLineFull extracts name, email, timestamp, and timezone from a line.
+func parsePersonLineFull(line string) (name, email string, timestamp int64, tzOffset int) {
+	// Find the email part <...>
 	if idx := strings.IndexByte(line, '<'); idx >= 0 {
 		name = strings.TrimSpace(line[:idx])
-		email = line[idx+1:]
-		if idx2 := strings.IndexByte(email, '>'); idx2 >= 0 {
-			email = email[:idx2]
+		rest := line[idx+1:]
+		if idx2 := strings.IndexByte(rest, '>'); idx2 >= 0 {
+			email = rest[:idx2]
+			rest = strings.TrimSpace(rest[idx2+1:])
+			// Parse timestamp and timezone: "1234567890 +0800"
+			tsParts := strings.Fields(rest)
+			if len(tsParts) >= 1 {
+				ts, err := strconv.ParseInt(tsParts[0], 10, 64)
+				if err == nil {
+					timestamp = ts
+				}
+			}
+			if len(tsParts) >= 2 {
+				tzOffset = parseTZOffset(tsParts[1])
+			}
 		}
 	}
-	return name, email
+	return
+}
+
+// parseTZOffset parses a timezone string like "+0800" or "-0500" to seconds.
+func parseTZOffset(s string) int {
+	if len(s) != 5 || (s[0] != '+' && s[0] != '-') {
+		return 0
+	}
+	sign := 1
+	if s[0] == '-' {
+		sign = -1
+	}
+	hours, _ := strconv.Atoi(s[1:3])
+	mins, _ := strconv.Atoi(s[3:5])
+	return sign * (hours*3600 + mins*60)
 }
 
 // ReadCommit reads a commit object and returns its parsed data.
@@ -143,18 +202,29 @@ func ReadCommit(objectsDir string, h hash.Hash) (*CommitData, error) {
 
 // CommitTime returns the commit time as a time.Time.
 func (c *CommitData) CommitTime() time.Time {
-	return time.Unix(c.Timestamp, 0)
+	loc := time.FixedZone("", c.TZOffset)
+	return time.Unix(c.Timestamp, 0).In(loc)
 }
 
-// ShortHash returns a 7-character hex prefix of the commit hash.
-// The hash must be set externally after writing.
-func (c *CommitData) ShortHash() string {
-	return "0000000"
-}
-
-// FormatTimestamp formats the commit timestamp for display.
-func FormatTimestamp(ts int64) string {
-	return time.Unix(ts, 0).Format("Mon Jan 2 15:04:05 2006")
+// FormatTimestamp formats the commit timestamp with timezone for display.
+func FormatTimestamp(ts int64, tzOffset int) string {
+	loc := time.FixedZone("", tzOffset)
+	t := time.Unix(ts, 0).In(loc)
+	tzSign := "+"
+	if tzOffset < 0 {
+		tzSign = "-"
+		tzAbs := -tzOffset
+		tzHours := tzAbs / 3600
+		tzMins := (tzAbs % 3600) / 60
+		return fmt.Sprintf("%s %s%02d%02d",
+			t.Format("Mon Jan 2 15:04:05 2006"),
+			tzSign, tzHours, tzMins)
+	}
+	tzHours := tzOffset / 3600
+	tzMins := (tzOffset % 3600) / 60
+	return fmt.Sprintf("%s %s%02d%02d",
+		t.Format("Mon Jan 2 15:04:05 2006"),
+		tzSign, tzHours, tzMins)
 }
 
 // GetTimestamp parses a Unix timestamp from a string.
