@@ -1,0 +1,9 @@
+[Unit]
+Description=MinusSync Server Socket
+
+[Socket]
+ListenStream=65530
+Accept=no
+
+[Install]
+WantedBy=sockets.target

@@ -1,0 +1,20 @@
+[Unit]
+Description=MinusSync Server Daemon (%i)
+After=network.target
+
+[Service]
+Type=simple
+User=msyncd
+Group=msyncd
+ExecStart=/usr/local/bin/msyncd --config /etc/msyncd/%i.yaml
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/msyncd /var/log
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
