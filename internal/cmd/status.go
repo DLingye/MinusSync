@@ -158,7 +158,7 @@ func showStatus(r *repo.Repository, short bool) error {
 
 		entry := r.Index.Find(relPath)
 		if entry != nil {
-			dirty, _ := r.Index.Dirty(relPath, info)
+			dirty, _ := r.Index.Dirty(relPath, path, info)
 			if dirty {
 				// Compute wip vs index delta by re-reading the file
 				content, _ := os.ReadFile(path)

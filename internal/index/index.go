@@ -12,12 +12,14 @@ import (
 	"sort"
 
 	"github.com/MinusSync/internal/hash"
+	"github.com/MinusSync/internal/util"
 )
 
 // Magic bytes for the index file.
 var indexMagic = [4]byte{'M', 'S', 'Y', 'N'}
 
-const indexVersion uint16 = 1
+// indexVersion 2 在每条 entry 中新增了 Fingerprint（部分哈希指纹）字段。
+const indexVersion uint16 = 2
 
 // Flag bits for IndexEntry.
 const (
@@ -28,12 +30,13 @@ const (
 
 // IndexEntry represents one entry in the staging area.
 type IndexEntry struct {
-	Path    string
-	Hash    hash.Hash
-	Size    int64
-	MtimeNs int64
-	Mode    uint32
-	Flags   uint16
+	Path        string
+	Hash        hash.Hash
+	Fingerprint hash.Hash // 部分哈希指纹（头+中+尾 4KB 采样），用于快速脏检
+	Size        int64
+	MtimeNs     int64
+	Mode        uint32
+	Flags       uint16
 }
 
 // Index holds the staging area.
@@ -73,7 +76,10 @@ func Load(path string) (*Index, error) {
 
 	// Read version
 	version := binary.BigEndian.Uint16(data[4:6])
-	if version != indexVersion {
+
+	// 支持 version 1（旧格式，无 Fingerprint 字段）和 version 2（含 Fingerprint）
+	hasFingerprint := version >= 2
+	if version != 1 && version != 2 {
 		return idx, nil // Unknown version, treat as empty
 	}
 
@@ -108,6 +114,16 @@ func Load(path string) (*Index, error) {
 		copy(h[:], data[pos:pos+hash.Size])
 		pos += hash.Size
 
+		// Read fingerprint (version 2+)
+		var fp hash.Hash
+		if hasFingerprint {
+			if pos+hash.Size > len(data) {
+				break
+			}
+			copy(fp[:], data[pos:pos+hash.Size])
+			pos += hash.Size
+		}
+
 		// Read size
 		if pos+8 > len(data) {
 			break
@@ -137,12 +153,13 @@ func Load(path string) (*Index, error) {
 		pos += 2
 
 		entries = append(entries, IndexEntry{
-			Path:    path,
-			Hash:    h,
-			Size:    size,
-			MtimeNs: mtime,
-			Mode:    mode,
-			Flags:   flags,
+			Path:        path,
+			Hash:        h,
+			Fingerprint: fp,
+			Size:        size,
+			MtimeNs:     mtime,
+			Mode:        mode,
+			Flags:       flags,
 		})
 	}
 
@@ -187,6 +204,9 @@ func (idx *Index) Save() error {
 
 		// Hash
 		buf.Write(e.Hash[:])
+
+		// Fingerprint
+		buf.Write(e.Fingerprint[:])
 
 		// Size
 		sizeBytes := make([]byte, 8)
@@ -268,20 +288,23 @@ func (idx *Index) Len() int {
 }
 
 // Dirty reports whether an entry has changed relative to the working tree.
-func (idx *Index) Dirty(path string, info os.FileInfo) (bool, error) {
-	entry := idx.Find(path)
+// 检测顺序：先做 O(1) 的 stat 快速判断，当 size/mtime 变化时再用部分哈希指纹
+// 确认内容是否真的改变，避免 mtime 被误触导致误判。
+// absPath 用于读取文件计算指纹。
+func (idx *Index) Dirty(relPath, absPath string, info os.FileInfo) (bool, error) {
+	entry := idx.Find(relPath)
 	if entry == nil {
 		return true, nil // Not in index = new file
 	}
 
-	// Compare stat info
+	// 快速 stat 判断（不读文件）
 	if entry.Size != info.Size() {
-		return true, nil
+		return idx.fingerprintChanged(entry, absPath), nil
 	}
 
 	mtimeNs := info.ModTime().UnixNano()
 	if entry.MtimeNs != mtimeNs {
-		return true, nil
+		return idx.fingerprintChanged(entry, absPath), nil
 	}
 
 	if entry.Mode != uint32(info.Mode()) {
@@ -289,6 +312,22 @@ func (idx *Index) Dirty(path string, info os.FileInfo) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// fingerprintChanged 通过部分哈希指纹确认文件内容是否真的改变。
+// 当指纹无法对比（旧索引无指纹、或读文件失败）时，保守地返回 true（视为已修改）。
+func (idx *Index) fingerprintChanged(entry *IndexEntry, absPath string) bool {
+	// 无指纹（旧版本索引或首次），无法快速对比，保守视为已修改
+	if entry.Fingerprint.IsZero() {
+		return true
+	}
+
+	fp, err := util.ComputeFingerprintFromFile(absPath)
+	if err != nil {
+		return true // 读文件失败，保守视为已修改
+	}
+
+	return !fp.Equal(entry.Fingerprint)
 }
 
 // IsTracked reports whether a path is in the index.
@@ -311,6 +350,7 @@ func (idx *Index) ComputeHash() hash.Hash {
 	for _, e := range idx.Entries {
 		buf.Write([]byte(e.Path))
 		buf.Write(e.Hash[:])
+		buf.Write(e.Fingerprint[:])
 		fmt.Fprintf(&buf, "%d%d", e.Size, e.MtimeNs)
 	}
 	return hash.Compute(buf.Bytes())

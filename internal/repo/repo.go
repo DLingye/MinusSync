@@ -175,6 +175,16 @@ func (r *Repository) SaveIndex() error {
 	return nil
 }
 
+// IsSyncOnly reports whether this repository is in sync-only mode.
+// sync-only 模式只记录文件修改状态并同步，不保留完整版本历史。
+func (r *Repository) IsSyncOnly() bool {
+	if r.Config == nil {
+		return false
+	}
+	v, _ := r.Config.GetBool("core", "sync-only")
+	return v
+}
+
 // ErrNotRepo is returned when the path is not inside a MinusSync repository.
 type ErrNotRepo struct {
 	Path string

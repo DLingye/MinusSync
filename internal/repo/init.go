@@ -12,8 +12,9 @@ import (
 
 // InitOptions configures repository initialization.
 type InitOptions struct {
-	Path string // Target directory
-	Bare bool   // Create a bare repository (no working tree)
+	Path     string // Target directory
+	Bare     bool   // Create a bare repository (no working tree)
+	SyncOnly bool   // Create a sync-only repository (no version history)
 }
 
 // Init creates a new MinusSync repository.
@@ -73,6 +74,7 @@ func Init(opts InitOptions) (*Repository, error) {
 
 	// Set default configuration
 	repo.Config.Set("core", "bare", fmt.Sprintf("%v", opts.Bare))
+	repo.Config.Set("core", "sync-only", fmt.Sprintf("%v", opts.SyncOnly))
 	repo.Config.Set("core", "compression", "zstd")
 	repo.Config.Set("core", "compression-level", "3")
 	repo.Config.Set("core", "version", "1")

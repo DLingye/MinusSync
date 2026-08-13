@@ -11,6 +11,8 @@ func RegisterCommands(root *cobra.Command) {
 	root.AddCommand(addCmd())
 	root.AddCommand(commitCmd())
 	root.AddCommand(statusCmd())
+	root.AddCommand(checkCmd())
+	root.AddCommand(syncCmd())
 	root.AddCommand(logCmd())
 	root.AddCommand(diffCmd())
 	root.AddCommand(tagCmd())

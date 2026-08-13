@@ -97,7 +97,7 @@ func showDiffWorkingVsIndex(r *repo.Repository, statOnly bool) error {
 			return nil
 		}
 
-		dirty, _ := r.Index.Dirty(relPath, info)
+		dirty, _ := r.Index.Dirty(relPath, path, info)
 		if dirty {
 			if statOnly {
 				files++
@@ -161,7 +161,7 @@ func showDiffWorkingVsTree(r *repo.Repository, treeHash hash.Hash, statOnly bool
 
 		entry := r.Index.Find(relPath)
 		if entry != nil {
-			dirty, _ := r.Index.Dirty(relPath, info)
+			dirty, _ := r.Index.Dirty(relPath, path, info)
 			if !dirty {
 				if treeEntry, inTree := treeMap[relPath]; inTree {
 					if treeEntry.Hash.Equal(entry.Hash) {

@@ -26,6 +26,11 @@ func commitCmd() *cobra.Command {
 			}
 			defer r.Close()
 
+			// sync-only 模式下禁用 commit
+			if r.IsSyncOnly() {
+				return fmt.Errorf("sync-only 模式不保留版本历史，请使用 'msync sync'")
+			}
+
 			if all {
 				if err := addAll(r); err != nil {
 					return err
